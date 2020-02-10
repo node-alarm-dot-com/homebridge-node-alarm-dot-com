@@ -109,54 +109,35 @@ class ADCPlatform {
         } else {
           if (this.config.logLevel > 3)
             this.log(`Received no sensors from Alarm.com. If you are expecting
-            sensors in your Alarm.com setup, you may need to check that your 
+            sensors in your Alarm.com setup, you may need to check that your
             provider has assigned sensors in your Alarm.com account`)
         }
-
-        if (typeof res.locks[0] != 'undefined') {
+        var locksAndLights =  res.locks.concat(res.lights);
+        if (typeof locksAndLights[0] != 'undefined') {
           if (this.config.logLevel > 2)
-            this.log(`Received ${res.locks.length} locks(s) from Alarm.com`)
-
-          res.lights.forEach(l => {
-            // check for ignored light
+            this.log(`Received ${locksAndLights.length} light(s) and locks(s) from Alarm.com`)
+          locksAndLights.forEach(l => {
             if (!this.ignoredDevices.includes(l.id)) {
-              this.addLight(l)
-              if (this.config.logLevel > 2)
-                this.log(`Added light ${l.attributes.description} (${l.id})`)
+              if (l.type == 'devices/lock') {
+                this.addLock(l)
+                if (this.config.logLevel > 2)
+                  this.log(`Added lock ${l.attributes.description} (${l.id})`)
+              } else {
+                this.addLight(l)
+                if (this.config.logLevel > 2)
+                  this.log(`Added light ${l.attributes.description} (${l.id})`)
+              }
             } else {
               if (this.config.logLevel > 2)
-                this.log(`Ignored light ${l.attributes.description} (${l.id})`)
+                this.log(`Ignored light or lock ${l.attributes.description} (${l.id})`)
             }
           })
         } else {
           if (this.config.logLevel > 3)
-            this.log(`Received no lights from Alarm.com. If you are expecting
-            lights in your Alarm.com setup, you may need to check that your 
-            provider has assigned lights in your Alarm.com account`)
+            this.log(`Received no lights or locks from Alarm.com. If you are
+            expecting lights in your Alarm.com setup, you may need to check that
+            your provider has assigned lights in your Alarm.com account`)
         }
-
-        if (typeof res.lights[0] != 'undefined') {
-          if (this.config.logLevel > 2)
-            this.log(`Received ${res.lights.length} light(s) from Alarm.com`)
-
-          res.locks.forEach(l => {
-            // check for ignored lock
-            if (!this.ignoredDevices.includes(l.id)) {
-              this.addLock(l)
-              if (this.config.logLevel > 2)
-                this.log(`Added lock ${l.attributes.description} (${l.id})`)
-            } else {
-              if (this.config.logLevel > 2)
-                this.log(`Ignored lock ${l.attributes.description} (${l.id})`)
-            }
-          })
-        } else {
-          if (this.config.logLevel > 3)
-            this.log(`Received no locks from Alarm.com. If you are expecting
-            locks in your Alarm.com setup, you may need to check that your 
-            provider has assigned locks in your Alarm.com account`)
-        }
-
       })
       .catch(err => {
         if (this.config.logLevel > 0)
