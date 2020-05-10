@@ -4,45 +4,87 @@
   "singular": true,
   "headerDisplay": "Alarm.com security system plugin using Node.js API",
   "schema": {
+    "definitions": {
+      "arming_obj": {
+        "type": "object",
+        "properties": {
+          "noEntryDelay": {"type": "boolean", "default": false},
+          "silentArming": {"type": "boolean", "default": false}
+        }
+      }
+    },
     "type": "object",
     "properties": {
       "name": {
-        "title": "Name",
+        "title": "Name (REQUIRED)",
         "type": "string",
         "default": "Security System",
-        "description": "The name that will appear in your homebridge log"
+        "description": "The name that will appear in your homebridge log.",
+        "required": true
       },
       "username": {
-        "title": "Username",
+        "title": "Username (REQUIRED)",
         "type": "string",
-        "description": "Alarm.com username",
+        "description": "Alarm.com login username, same as app.",
         "required": true
       },
       "password": {
-        "title": "Password",
+        "title": "Password (REQUIRED)",
         "type": "string",
-        "description": "Alarm.com password",
+        "description": "Alarm.com login password, same as app.",
         "required": true
       },
       "logLevel": {
-        "title": "Log Level",
+        "title": "Log Level (OPTIONAL)",
         "type": "integer",
         "default": 3,
         "required": true,
         "oneOf": [
-          { "title": "No log entries", "enum": [0] },
-          { "title": "Only errors", "enum": [1] },
-          { "title": "Only warnings and errors", "enum": [2] },
-          { "title": "Notices, warnings, and errors", "enum": [3] },
-          { "title": "Verbose", "enum": [4] }
+          { "title": "0 - No log entries", "enum": [0] },
+          { "title": "1 - Only errors", "enum": [1] },
+          { "title": "2 - Only warnings and errors", "enum": [2] },
+          { "title": "3 - Notices, warnings, and errors (Default)", "enum": [3] },
+          { "title": "4 - Verbose", "enum": [4] }
         ]
       },
-      "ignoredDevices": {
-        "title": "Ignored Devices",
+      "authTimeoutMinutes": {
+        "title": "Timeout to Re-Authenticate Session (OPTIONAL)",
+        "type": "integer",
+        "placeholder": 10,
+        "description": "(<b>WARNING:</b> choosing a time less than 10 minutes could possibly ban/disable your account from Alarm.com.)"
+      },
+      "pollTimeoutSeconds": {
+        "title": "Device Polling Interval (OPTIONAL)",
+        "type": "integer",
+        "placeholder": 60,
+        "description": "(<b>WARNING:</b> choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com.)"
+      },
+      "armingModes": {
         "type": "array",
+        "description": "Alarm.com arming modes (OPTIONAL). <p>(<b>WARNING:</b> the Alarm.com webAPI does not support setting silent arming to true and this feature does not work at this time.)",
+        "maxItems": 1,
         "items": {
+          "type": "object",
+          "properties": {
+            "away": {
+              "$ref": "#/definitions/arming_obj", "extendRefs": true
+            },
+            "night": {
+              "$ref": "#/definitions/arming_obj", "extendRefs": true
+            },
+            "stay": {
+              "$ref": "#/definitions/arming_obj", "extendRefs": true
+            }
+          }
+        }
+      },
+      "ignoredDevices": {
+        "type": "array",
+        "description": "IDs for Alarm.com accessories you wish to hide in Homekit. (OPTIONAL)",
+        "items": {
+          "title": "Ignored Device",
           "type": "string",
-          "placeholder": "96922426-1"
+          "placeholder": "96922426-1 (Example)"
         }
       }
     }
