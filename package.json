@@ -20,7 +20,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mkormendy/homebridge-node-alarm-dot-com.git"
+    "url": "git+https://github.com/ngori/homebridge-node-alarm-dot-com.git"
   },
   "homepage": "https://github.com/mkormendy/homebridge-node-alarm-dot-com#readme",
   "bugs": {

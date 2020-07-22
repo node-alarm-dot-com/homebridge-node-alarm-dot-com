@@ -124,6 +124,7 @@ class ADCPlatform {
                   this.addLight(d)
                 } else if (realDeviceType === 'lock') {
                   this.addLock(d)
+                  else if (realDeviceType === 'garage')
                 }
                 // add more devices here as available, ie. garage doors, etc
 
@@ -233,12 +234,14 @@ class ADCPlatform {
             out.sensors = out.sensors.concat(system.sensors)
             out.lights = out.lights.concat(system.lights)
             out.locks = out.locks.concat(system.locks)
+            out.garages = out.garages.concat(system.garages)
             return out
           }, {
             partitions: [],
             sensors: [],
             lights: [],
-            locks: []
+            locks: [],
+            garages: []
           }
         )
       })
@@ -310,6 +313,19 @@ class ADCPlatform {
           } else {
             if (this.logLevel > 2)
               this.log('No locks found, ignore if expected, or check configuration with security system provider')
+          }
+
+          if (system.garages) {
+            system.garages.forEach(lock => {
+              const accessory = this.accessories[garage.id]
+              if (!accessory) {
+                return this.addGarage(garage)
+              }
+              this.statGarageState(accessory, garage)
+            })
+          } else {
+            if (this.logLevel > 2)
+              this.log('No garages found, ignore if expected, or check configuration with security system provider')
           }
 
         })
@@ -1007,6 +1023,165 @@ class ADCPlatform {
       })
   }
 
+  // Garage Methods /////////////////////////////////////////////////////////
+
+  addGarage(garage) {
+    const id = garage.id
+    let accessory = this.accessories[id]
+    // in an ideal world, homebridge shouldn't be restarted too often
+    // so upon starting we clean out the cache of alarm accessories
+    if (accessory)
+      this.removeAccessory(accessory)
+
+    const [type, model] = [
+      Service.GarageDoorOpener,
+      'Garage Door'
+    ]
+
+    const name = garage.attributes.description
+    const uuid = UUIDGen.generate(id)
+    accessory = new Accessory(name, uuid)
+
+    accessory.context = {
+      accID: id,
+      name: name,
+      state: garage.attributes.state,
+      desiredState: garage.attributes.desiredState,
+      garageType: model
+    }
+
+    // if the garage id is not in the ignore list in the homebridge config
+    if (!this.ignoredDevices.includes(id)) {
+      if (this.config.logLevel > 2)
+        this.log(`Adding ${model} "${name}" (id=${id}, uuid=${uuid}) (${accessory.context.state} ${accessory.context.desiredState})`)
+
+      this.addAccessory(accessory, type, model)
+      this.setupGarage(accessory)
+
+      // Set the initial garage state
+      this.statGarageState(accessory, garage)
+    }
+  }
+
+  setupGarage(accessory) {
+    const id = accessory.context.accID
+    const name = accessory.context.name
+    const model = accessory.context.garageType
+    const [type, characteristic] = [
+      Service.GarageDoorOpener,
+      Characteristic.CurrentDoorState,
+      Characteristic.TargetDoorState
+     // Characteristic.ObstructionDetected
+    ]
+    if (!characteristic && this.config.logLevel > 1)
+      throw new Error(`Unrecognized garage door opener ${accessory.context.accID}`)
+
+    // Always reachable
+    accessory.reachable = true
+
+    // Setup HomeKit accessory information
+    accessory
+      .getService(Service.AccessoryInformation)
+      .setCharacteristic(Characteristic.Manufacturer, MANUFACTURER)
+      .setCharacteristic(Characteristic.Model, model)
+      .setCharacteristic(Characteristic.SerialNumber, id)
+
+    // Setup event listeners
+
+    accessory.on('identify', (paired, callback) => {
+      if (this.config.logLevel > 2)
+        this.log(`${name} identify requested, paired=${paired}`)
+
+      callback()
+    })
+
+    const service = accessory.getService(type)
+
+    service
+      .getCharacteristic(Characteristic.CurrentDoorState)
+      .on('get', callback => { callback(null, accessory.context.state) })
+
+    service
+      .getCharacteristic(Characteristic.TargetDoorState)
+      .on('get', callback => callback(null, accessory.context.desiredState))
+      .on('set', (value, callback) => this.changeGarageState(accessory, value, callback))
+  }
+
+  statGarageState(accessory, garage) {
+    const id = accessory.context.accID
+    const name = accessory.context.name
+    const state = getGarageState(garage.attributes.state)
+    const desiredState = getGarageState(garage.attributes.desiredState)
+
+    if (state !== accessory.context.state) {
+      if (this.config.logLevel > 2)
+        this.log(`Updating garage ${name} (${id}), state=${state}, prev=${accessory.context.state}`)
+
+      accessory.context.state = state
+      accessory
+        .getService(Service.GarageDoorOpener)
+        .getCharacteristic(Characteristic.CurrentDoorState)
+        .updateValue(state)
+    }
+
+    if (desiredState !== accessory.context.desiredState) {
+      accessory.context.desiredState = desiredState
+      accessory
+        .getService(Service.GarageDoorOpener)
+        .getCharacteristic(Characteristic.TargetDoorState)
+        .updateValue(desiredState)
+    }
+  }
+
+  /**
+     * Change the physical state of a garage using the Alarm.com API.
+     *
+     * @param accessory  The lock to be changed.
+     * @param {boolean} value  Value representing opened or closed states of the
+     *   garage.
+     * @param callback
+     */
+
+  changeGarageState(accessory, value, callback) {
+    const id = accessory.context.accID
+    let method
+    const opts = {}
+
+   const printval = value
+   this.log(value)
+
+    switch (value) {
+      case Characteristic.TargetDoorState.OPEN:
+        method = nodeADC.openGarage
+        break
+      case Characteristic.TargetDoorState.CLOSED:
+        method = nodeADC.closeGarage
+        break
+      default:
+        const msg = `Can't set garage to unknown value ${value}`
+        if (this.config.logLevel > 1)
+          this.log(msg)
+        return callback(new Error(msg))
+    }
+
+    if (this.config.logLevel > 2)
+      this.log(`Garage Door ${accessory.context.accID}, ${value})`)
+
+    accessory.context.desiredState = value
+
+    this.login()
+      .then(res => method(id, res, opts)) // Usually 20-30 seconds
+      .then(res => res.data)
+      .then(garage => {
+        this.statGarageState(accessory, garage)
+      })
+      .then(_ => callback())
+      .catch(err => {
+        this.log(`Error: Failed to change garage state: ${err.stack}`)
+        this.refreshDevices()
+        callback(err)
+      })
+  }
 
   // Accessory Methods /////////////////////////////////////////////////////////
 
@@ -1094,7 +1269,7 @@ class ADCPlatform {
 
 /**
  * Fetches all relationships for a system from Alarm.com
- * 
+ *
  * @param res  Response object from login().
  * @returns {Promise<[(number | bigint), number, number, number, number, number,
  *   number, number, number, number]>}  See systemState.ts for return type.
@@ -1182,6 +1357,23 @@ function getLockState(state) {
       return Characteristic.LockCurrentState.SECURED
     default:
       return Characteristic.LockCurrentState.UNKNOWN
+  }
+}
+
+/**
+ * Maps an Alarm.com lock state to its nodeADC counterpart.
+ *
+ * @param state  The state as defined by Alarm.com.
+ * @returns {number|*}  The state as nodeADC defines it.
+ */
+function getGarageState(state) {
+  switch (state) {
+    case nodeADC.GARAGE_STATES.OPEN:
+      return Characteristic.GarageCurrentState.OPEN
+    case nodeADC.GARAGE_STATES.CLOSED:
+      return Characteristic.GARAGECurrentState.SECURED
+    default:
+      return Characteristic.GARAGECurrentState.UNKNOWN
   }
 }
 
