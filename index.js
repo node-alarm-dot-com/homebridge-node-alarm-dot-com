@@ -317,12 +317,12 @@ class ADCPlatform {
           }
 
           if (system.garages) {
-            system.garages.forEach(garage => {
-              const accessory = this.accessories[garage.id]
+            system.garages.forEach(garage-door => {
+              const accessory = this.accessories[garage-door.id]
               if (!accessory) {
-                return this.addGarage(garage)
+                return this.addGarage(garage-door)
               }
-              this.statGarageState(accessory, garage)
+              this.statGarageState(accessory, garage-door)
             })
           } else {
             if (this.logLevel > 2)
