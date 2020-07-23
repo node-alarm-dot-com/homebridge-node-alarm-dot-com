@@ -320,9 +320,9 @@ class ADCPlatform {
             system.garages.forEach(garage => {
               const accessory = this.accessories[garage.id]
               if (!accessory) {
-                return this.addGarage(garage-door)
+                return this.addGarage(garage)
               }
-              this.statGarageState(accessory, garage-door)
+              this.statGarageState(accessory, garage)
             })
           } else {
             if (this.logLevel > 2)
