@@ -1370,11 +1370,11 @@ function getLockState(state) {
 function getGarageState(state) {
   switch (state) {
     case nodeADC.GARAGE_STATES.OPEN:
-      return Characteristic.GarageCurrentState.OPEN
+      return Characteristic.CurrentDoorState.OPEN
     case nodeADC.GARAGE_STATES.CLOSED:
-      return Characteristic.GARAGECurrentState.SECURED
+      return Characteristic.CurrentDoorState.SECURED
     default:
-      return Characteristic.GARAGECurrentState.UNKNOWN
+      return Characteristic.CurrentDoorState.UNKNOWN
   }
 }
 
