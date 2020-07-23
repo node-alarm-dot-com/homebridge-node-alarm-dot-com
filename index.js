@@ -242,7 +242,7 @@ class ADCPlatform {
             sensors: [],
             lights: [],
             locks: [],
-            garageTESTs: []
+            garages: []
           }
         )
       })
