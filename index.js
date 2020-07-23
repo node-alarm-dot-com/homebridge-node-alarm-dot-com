@@ -124,7 +124,7 @@ class ADCPlatform {
                   this.addLight(d)
                 } else if (realDeviceType === 'lock') {
                   this.addLock(d)
-                } else if (realDeviceType === 'garagedoor') {
+                } else if (realDeviceType === 'garage') {
                   this.addGarage(d)
                 }
                 // add more devices here as available, ie. garage doors, etc
@@ -317,7 +317,7 @@ class ADCPlatform {
           }
 
           if (system.garages) {
-            system.garages.forEach(lock => {
+            system.garages.forEach(garage => {
               const accessory = this.accessories[garage.id]
               if (!accessory) {
                 return this.addGarage(garage)
