@@ -124,7 +124,7 @@ class ADCPlatform {
                   this.addLight(d)
                 } else if (realDeviceType === 'lock') {
                   this.addLock(d)
-                } else if (realDeviceType === 'garage-door') {
+                } else if (realDeviceType === 'garages') {
                   this.addGarage(d)
                 }
                 // add more devices here as available, ie. garage doors, etc
