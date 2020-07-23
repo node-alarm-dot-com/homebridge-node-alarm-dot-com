@@ -124,7 +124,7 @@ class ADCPlatform {
                   this.addLight(d)
                 } else if (realDeviceType === 'lock') {
                   this.addLock(d)
-                } else if (realDeviceType === 'garages') {
+                } else if (realDeviceType === 'garage-door') {
                   this.addGarage(d)
                 }
                 // add more devices here as available, ie. garage doors, etc
@@ -317,16 +317,16 @@ class ADCPlatform {
           }
 
           if (system.garages) {
-            system.garages.forEach(garage => {
-              const accessory = this.accessories[garage.id]
+            system.garages.forEach(garage-door => {
+              const accessory = this.accessories[garage-door.id]
               if (!accessory) {
-                return this.addGarage(garage)
+                return this.addGarage(garage-door)
               }
-              this.statGarageState(accessory, garage)
+              this.statGarageState(accessory, garage-door)
             })
           } else {
             if (this.logLevel > 2)
-              this.log('No garages found, ignore if expected, or check configuration with security system provider')
+              this.log('No garage doors found, ignore if expected, or check configuration with security system provider')
           }
 
         })
