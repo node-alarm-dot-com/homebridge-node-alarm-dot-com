@@ -317,8 +317,8 @@ class ADCPlatform {
           }
 
           if (system.garages) {
-            system.garages.forEach(garage-door => {
-              const accessory = this.accessories[garage-door.id]
+            system.garages.forEach(garage => {
+              const accessory = this.accessories[garage.id]
               if (!accessory) {
                 return this.addGarage(garage-door)
               }
