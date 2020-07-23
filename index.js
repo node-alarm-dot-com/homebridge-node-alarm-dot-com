@@ -1026,8 +1026,8 @@ class ADCPlatform {
 
   // Garage Methods /////////////////////////////////////////////////////////
 
-  addGarage(garage) {
-    const id = garage.id
+  addGarage(garage-door) {
+    const id = garage-door.id
     let accessory = this.accessories[id]
     // in an ideal world, homebridge shouldn't be restarted too often
     // so upon starting we clean out the cache of alarm accessories
