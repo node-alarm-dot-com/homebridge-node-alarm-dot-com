@@ -7,7 +7,7 @@ const PLUGIN_NAME = 'Alarmdotcom'
 const MANUFACTURER = 'Alarm.com'
 const AUTH_TIMEOUT_MINS = 10 // default for session authentication refresh
 const POLL_TIMEOUT_SECS = 60 // default for device state polling
-const LOG_LEVEL = 4 // default for log entries: 0 = NONE, 1 = ERROR, 2 = WARN, 3 = NOTICE, 4 = VERBOSE
+const LOG_LEVEL = 3 // default for log entries: 0 = NONE, 1 = ERROR, 2 = WARN, 3 = NOTICE, 4 = VERBOSE
 
 let Accessory, Service, Characteristic, UUIDGen
 
@@ -1137,7 +1137,7 @@ class ADCPlatform {
   /**
      * Change the physical state of a garage using the Alarm.com API.
      *
-     * @param accessory  The lock to be changed.
+     * @param accessory  The garage to be changed.
      * @param {boolean} value  Value representing opened or closed states of the
      *   garage.
      * @param callback
@@ -1362,7 +1362,7 @@ function getLockState(state) {
 }
 
 /**
- * Maps an Alarm.com lock state to its nodeADC counterpart.
+ * Maps an Alarm.com garage state to its nodeADC counterpart.
  *
  * @param state  The state as defined by Alarm.com.
  * @returns {number|*}  The state as nodeADC defines it.
