@@ -557,7 +557,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     const [type, characteristic, model] = getSensorType(sensor);
     if (type === undefined) {
-      this.log.warn(`Warning: Sensor with unknown state ${sensor.attributes.state}`);
+      this.log.warn(`Warning: Sensor ${sensor.attributes.description} has unknown state ${sensor.attributes.state} (${sensor.id})`);
 
       return;
     }
