@@ -235,7 +235,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    */
   timerLoop() {
     // Create a randomized delay by adding between 0 - 5 minutes to timer
-    const timerDelay = (this.config.pollTimeoutSeconds * 1000) + (300000 * Math.random());
+    const timerDelay = (this.config.pollTimeoutSeconds * 1000) + (30000 * Math.random());
     setTimeout(() => {
       this.refreshDevices();
       this.timerLoop();
