@@ -1,3 +1,6 @@
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import {
   API, APIEvent,
   CharacteristicGetCallback,
@@ -6,7 +9,7 @@ import {
   DynamicPlatformPlugin,
   HAP, Logging, PlatformAccessory,
   PlatformAccessoryEvent,
-  PlatformConfig
+  PlatformConfig,
 } from 'homebridge';
 
 import fs from 'fs';
@@ -16,7 +19,7 @@ import {
   LIGHT_STATES,
   LOCK_STATES,
   SENSOR_STATES,
-  SYSTEM_STATES
+  SYSTEM_STATES,
 } from 'node-alarm-dot-com/dist/_models/States';
 
 import path from 'path';
@@ -38,7 +41,8 @@ import {
   LightState,
   LockState,
   SensorState,
-  FlattenedSystemState, DeviceState
+  FlattenedSystemState, 
+  DeviceState,
 } from 'node-alarm-dot-com';
 
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
@@ -80,7 +84,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private logLevel: number;
   private armingModes: any;
   private ignoredDevices: string[];
-  private useMFA: boolean;
+  public useMFA: boolean;
   private mfaToken?: string;
 
   /**
@@ -103,7 +107,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.config.pollTimeoutSeconds = this.config.pollTimeoutSeconds || POLL_TIMEOUT_SECS;
 
     this.authOpts = {
-      expires: +new Date() - 1
+      expires: +new Date() - 1000, // current time less 1 second
     } as AuthOpts;
 
     // Default arming mode options
@@ -111,18 +115,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
       'away': {
         nightArming: false,
         noEntryDelay: false,
-        silentArming: false
+        silentArming: false,
       },
       'night': {
         nightArming: true,
         noEntryDelay: false,
-        silentArming: true
+        silentArming: true,
       },
       'stay': {
         nightArming: false,
         noEntryDelay: false,
-        silentArming: true
-      }
+        silentArming: true,
+      },
     };
 
     // Overwrite default arming modes with config settings.
@@ -274,28 +278,31 @@ class ADCPlatform implements DynamicPlatformPlugin {
   /**
    * Method to retrieve/store/maintain login session state for the account.
    */
-  async login(): Promise<AuthOpts> {
-    // Cache expiration check
-    const now = +new Date();
-    if (this.authOpts.expires > now) {
-      return Promise.resolve(this.authOpts);
-    } else {
-      this.log.info(`Logging into Alarm.com as ${this.config.username}`);
 
-      const authOpts = await login(this.config.username, this.config.password, this.mfaToken);
-      // Cache login response and estimated expiration time
-      authOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
-      this.authOpts = authOpts;
-      this.log.info(`Logged into Alarm.com as ${this.config.username}`);
-      return Promise.resolve(this.authOpts);
+  async loginSession(): Promise<AuthOpts> {
+    const now = +new Date();
+    if (now > this.authOpts.expires) {
+      this.log.info(`Logging into Alarm.com as ${this.config.username}`);
+      //const authOpts = await login(this.config.username, this.config.password, this.mfaToken);
+      await login(this.config.username, this.config.password, this.mfaToken)
+        .then(authOpts => {
+
+        
+          // Cache login response and estimated expiration time
+          authOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
+          this.authOpts = authOpts;
+          this.log.info(`Logged into Alarm.com as ${this.config.username}`);
+        })
+        .catch(err => this.log.error(`loginSession Error: ${err.message}`));
     }
+    return this.authOpts;
   }
 
   /**
    * Method to gather devices and transform into a usable object.
    */
   async listDevices(): Promise<SimplifiedSystemState> {
-    const res = await this.login();
+    const res = await this.loginSession();
     const systemStates = await fetchStateForAllSystems(res);
     return systemStates.reduce((out, system) => {
       out.partitions = out.partitions.concat(system.partitions);
@@ -309,7 +316,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       sensors: [],
       lights: [],
       locks: [],
-      garages: []
+      garages: [],
     });
   }
 
@@ -317,7 +324,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * Method to update state on accessories/devices.
    */
   async refreshDevices(): Promise<void> {
-    await this.login()
+    await this.loginSession()
       .then(res => fetchStateForAllSystems(res))
       .then(systemStates => {
 
@@ -402,10 +409,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
           } else {
             this.log.info('No garage doors found, ignore if expected, or check configuration with security system provider');
           }
-
+          
         });
       })
-      .catch(err => this.log.error(err));
+      .catch(err => {
+        this.log.error(`refreshDevices Error: ${err.message}`);
+        this.authOpts.expires = +new Date() - 10000; // set `this.authOpts.expires` to the past to reinitiate loginSessions loop
+      });
   }
 
 
@@ -434,7 +444,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       state: null,
       desiredState: null,
       statusFault: null,
-      partitionType: 'default'
+      partitionType: 'default',
     };
 
     this.log.info(`Adding partition ${name} (id=${id}, uuid=${uuid})`);
@@ -480,7 +490,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       .getCharacteristic(Characteristic.SecuritySystemTargetState)
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.desiredState))
       .on('set', (value: CharacteristicValue,
-                  callback: CharacteristicSetCallback) => this.changePartitionState(accessory, value, callback));
+        callback: CharacteristicSetCallback) => this.changePartitionState(accessory, value, callback));
 
     service
       .getCharacteristic(Characteristic.StatusFault)
@@ -539,7 +549,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param callback
    */
   async changePartitionState(accessory: PlatformAccessory, value: CharacteristicValue,
-                             callback: CharacteristicSetCallback): Promise<void> {
+    callback: CharacteristicSetCallback): Promise<void> {
     const id = accessory.context.accID;
     let method: typeof armAway | typeof armStay | typeof disarm;
     const opts = {} as any;
@@ -577,7 +587,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     accessory.context.desiredState = value;
 
-    await this.login()
+    await this.loginSession()
       .then(res => method(id, res, opts))
       .then(res => res.data)
       .then(partition => this.statPartitionState(accessory, partition))
@@ -608,7 +618,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     const [type, characteristic, model] = getSensorType(sensor);
     if (type === undefined) {
-      this.log.warn(`Warning: Sensor ${sensor.attributes.description} has unknown state ${sensor.attributes.state}, ${characteristic} (ID: ${sensor.id})`);
+      this.log.warn(`Warning: Sensor ${sensor.attributes.description} has unknown state ${sensor.attributes.state} (${sensor.id})`);
+
       return;
     }
 
@@ -621,7 +632,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       name: name,
       state: null,
       batteryLow: false,
-      sensorType: model
+      sensorType: model,
     };
 
     // if the sensor id is not in the ignore list in the homebridge config
@@ -688,7 +699,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
 
     if (state !== accessory.context.state) {
-      this.log.info(`Updating sensor ${name} (${model}) (${id}), state=${state}, prev=${accessory.context.state}`);
+      this.log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
 
       accessory.context.state = state;
       accessory
@@ -730,7 +741,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     const [type, model] = [
       Service.Lightbulb,
-      'Light'
+      'Light',
     ];
 
     const name = light.attributes.description;
@@ -744,7 +755,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       desiredState: light.attributes.desiredState,
       isDimmer: light.attributes.isDimmer,
       lightLevel: light.attributes.lightLevel,
-      lightType: model
+      lightType: model,
     };
 
     // if the light id is not in the ignore list in the homebridge config
@@ -847,14 +858,14 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param callback
    */
   async changeLightBrightness(accessory: PlatformAccessory, brightness: CharacteristicValue,
-                              callback: CharacteristicSetCallback): Promise<void> {
+    callback: CharacteristicSetCallback): Promise<void> {
     const id = accessory.context.accID;
 
     this.log.info(`Changing light (${accessory.context.accID}, light level ${brightness})`);
 
     accessory.context.lightLevel = brightness;
 
-    await this.login()
+    await this.loginSession()
       .then(res => setLightOn(id, res, accessory.context.lightLevel))
       .then(res => res.data)
       .then(light => {
@@ -875,7 +886,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param callback
    */
   async changeLight(accessory: PlatformAccessory, on: CharacteristicValue,
-                    callback: CharacteristicSetCallback): Promise<void> {
+    callback: CharacteristicSetCallback): Promise<void> {
     // Alarm.com expects a single call for both brightness and 'on'
     // We need to ignore the extra call when changing brightness from homekit.
     if (on === accessory.context.state) {
@@ -896,7 +907,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     accessory.context.state = on;
 
-    await this.login()
+    await this.loginSession()
       .then(res => method(id, res, accessory.context.lightLevel ?? 100))
       .then(res => res.data)
       .then(light => {
@@ -929,7 +940,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     const [type, model] = [
       Service.LockMechanism,
-      'Door Lock'
+      'Door Lock',
     ];
 
     const name = lock.attributes.description;
@@ -941,7 +952,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       name: name,
       state: lock.attributes.state,
       desiredState: lock.attributes.desiredState,
-      lockType: model
+      lockType: model,
     };
 
     // if the lock id is not in the ignore list in the homebridge config
@@ -967,7 +978,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const model = accessory.context.lockType;
     const [type, characteristic] = [
       Service.LockMechanism,
-      Characteristic.LockCurrentState
+      Characteristic.LockCurrentState,
     ];
     if (!characteristic && this.logLevel > 1) {
       throw new Error(`Unrecognized lock ${accessory.context.accID}`);
@@ -1006,7 +1017,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       .getCharacteristic(Characteristic.LockTargetState)
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.desiredState))
       .on('set', (value: CharacteristicValue,
-                  callback: CharacteristicSetCallback) => this.changeLockState(accessory, value, callback));
+        callback: CharacteristicSetCallback) => this.changeLockState(accessory, value, callback));
   }
 
   /**
@@ -1052,8 +1063,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *   lock.
    * @param callback
    */
-  async changeLockState(accessory: PlatformAccessory, value: CharacteristicValue,
-                        callback: CharacteristicSetCallback): Promise<void> {
+  async changeLockState(accessory: PlatformAccessory, value: CharacteristicValue, callback: CharacteristicSetCallback): Promise<void> {
     const id = accessory.context.accID;
     let method: typeof setLockSecure | typeof setLockUnsecure;
 
@@ -1075,7 +1085,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     accessory.context.desiredState = value;
 
-    await this.login()
+    await this.loginSession()
       .then(res => method(id, res))
       .then(res => res.data)
       .then(lock => {
@@ -1102,7 +1112,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     const [type, model] = [
       Service.GarageDoorOpener,
-      'Garage Door'
+      'Garage Door',
     ];
 
     const name = garage.attributes.description;
@@ -1114,7 +1124,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       name: name,
       state: garage.attributes.state,
       desiredState: garage.attributes.desiredState,
-      garageType: model
+      garageType: model,
     };
 
     // if the garage id is not in the ignore list in the homebridge config
@@ -1136,7 +1146,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const [type, characteristic] = [
       Service.GarageDoorOpener,
       Characteristic.CurrentDoorState,
-      Characteristic.TargetDoorState
+      Characteristic.TargetDoorState,
       // Characteristic.ObstructionDetected
     ];
 
@@ -1172,7 +1182,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       .getCharacteristic(Characteristic.TargetDoorState)
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.desiredState))
       .on('set', (value: CharacteristicValue,
-                  callback: CharacteristicSetCallback) => this.changeGarageState(accessory, value, callback));
+        callback: CharacteristicSetCallback) => this.changeGarageState(accessory, value, callback));
   }
 
   statGarageState(accessory: PlatformAccessory, garage: GarageState): void {
@@ -1211,7 +1221,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    */
 
   async changeGarageState(accessory: PlatformAccessory, value: CharacteristicValue,
-                          callback: CharacteristicSetCallback): Promise<void> {
+    callback: CharacteristicSetCallback): Promise<void> {
     const id = accessory.context.accID;
     let method: typeof openGarage | typeof closeGarage;
 
@@ -1235,7 +1245,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     accessory.context.desiredState = value;
 
-    await this.login()
+    await this.loginSession()
       .then(res => method(id, res)) // Usually 20-30 seconds
       .then(res => res.data)
       .then(garage => {
@@ -1313,13 +1323,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const prefix = '[' + formatted_datetime + '] [' + name + '] ';
 
     fs.mkdir(path.dirname(payloadLogPath), {
-      recursive: true
+      recursive: true,
     }, (err) => {
       if (err) {
         console.log(prefix + err);
       } else {
         fs.writeFile(payloadLogPath + payloadLogName, payload, {
-          flag: 'w+'
+          flag: 'w+',
         }, (err) => {
           if (err) {
             console.log(prefix + err);
@@ -1336,12 +1346,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
 /**
  * Fetches all relationships for a system from Alarm.com
  *
- * @param res  Response object from login().
+ * @param res  Response object from loginSession().
  * @returns {Promise<[(number | bigint), number, number, number, number, number,
  *   number, number, number, number]>}  See SystemState.ts for return type.
  */
-function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]> {
-  return Promise.all(res.systems.map((id: string) => getCurrentState(id.toString(), res)));
+async function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]> {
+  return Promise.all(res.systems.map((id: string) => getCurrentState(id, res)));
 }
 
 /**
@@ -1458,27 +1468,27 @@ function getSensorType(sensor: SensorState): Array<any> {
       return [
         Service.ContactSensor,
         Characteristic.ContactSensorState,
-        'Contact Sensor'
+        'Contact Sensor',
       ];
     case SENSOR_STATES.IDLE:
     case SENSOR_STATES.ACTIVE:
       return [
         Service.OccupancySensor,
         Characteristic.OccupancyDetected,
-        'Occupancy Sensor'
+        'Occupancy Sensor',
       ];
     case SENSOR_STATES.DRY:
     case SENSOR_STATES.WET:
       return [
         Service.LeakSensor,
         Characteristic.LeakDetected,
-        'Leak Sensor'
+        'Leak Sensor',
       ];
     default:
       return [
         undefined,
         undefined,
-        undefined
+        undefined,
       ];
   }
 }
@@ -1494,22 +1504,22 @@ function sensorModelToType(model: string): Array<any> {
     case 'Contact Sensor':
       return [
         Service.ContactSensor,
-        Characteristic.ContactSensorState
+        Characteristic.ContactSensorState,
       ];
     case 'Occupancy Sensor':
       return [
         Service.OccupancySensor,
-        Characteristic.OccupancyDetected
+        Characteristic.OccupancyDetected,
       ];
     case 'Leak Sensor':
       return [
         Service.LeakSensor,
-        Characteristic.LeakDetected
+        Characteristic.LeakDetected,
       ];
     default:
       return [
         undefined,
-        undefined
+        undefined,
       ];
   }
 }
