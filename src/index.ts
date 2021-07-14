@@ -278,7 +278,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
   /**
    * Method to retrieve/store/maintain login session state for the account.
    */
-
   async loginSession(): Promise<AuthOpts> {
     const now = +new Date();
     if (now > this.authOpts.expires) {
@@ -622,7 +621,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const [type, characteristic, model] = getSensorType(sensor);
     if (type === undefined) {
       this.log.warn(`Warning: Sensor ${sensor.attributes.description} has unknown state ${sensor.attributes.state} (${sensor.id})`);
-
       return;
     }
 
@@ -702,7 +700,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
 
     if (state !== accessory.context.state) {
-      this.log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+      this.log.info(`Updating sensor ${name} (${model}) (${id}), state=${state}, prev=${accessory.context.state}`);
 
       accessory.context.state = state;
       accessory

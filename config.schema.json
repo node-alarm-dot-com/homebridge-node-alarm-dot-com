@@ -9,74 +9,88 @@
         "type": "object",
         "properties": {
           "noEntryDelay": {"type": "boolean", "default": false},
-          "silentArming": {"type": "boolean", "default": false}
+          "silentArming": {"type": "boolean", "default": false},
+          "nightArming": {"type":  "boolean", "default":  false}
         }
       }
     },
     "type": "object",
     "properties": {
       "name": {
-        "title": "<b>Name (REQUIRED)</b>",
+        "title": "<b>Name</b>",
         "type": "string",
         "default": "Security System",
         "description": "The name that will appear in your homebridge log.",
         "required": true
       },
       "username": {
-        "title": "<b>Username (REQUIRED)</b>",
+        "title": "<b>Username</b>",
         "type": "string",
         "description": "Alarm.com login username, same as app.",
         "required": true
       },
       "password": {
-        "title": "<b>Password (REQUIRED)</b>",
+        "title": "<b>Password</b>",
         "type": "string",
         "description": "Alarm.com login password, same as app.",
         "required": true
       },
+      "useMFA": {
+        "title": "Use Two Factor",
+        "type": "boolean"
+      },
+      "mfaCookie": {
+        "title": "2FA Cookie",
+        "type": "string",
+        "description": "If your account uses 2-factor, you'll need to input a twoFactorAuthenticationId from a logged in browser",
+        "required": false,
+        "condition": {
+          "functionBody": "return model.useMFA === true"
+        }
+      },
       "logLevel": {
-        "title": "<b>Log Level (OPTIONAL)</b>",
+        "title": "<b>Log Level</b>",
         "type": "integer",
         "default": 3,
         "required": true,
         "oneOf": [
-          { "title": "0 - No log entries", "enum": [0] },
-          { "title": "1 - Only errors", "enum": [1] },
-          { "title": "2 - Only warnings and errors", "enum": [2] },
-          { "title": "3 - Notices, warnings, and errors (Default)", "enum": [3] },
-          { "title": "4 - Verbose", "enum": [4] }
+          {"title": "0 - No log entries", "enum": [0]},
+          {"title": "1 - Only errors", "enum": [1]},
+          {"title": "2 - Only warnings and errors", "enum": [2]},
+          {"title": "3 - Notices, warnings, and errors (Default)", "enum": [3]},
+          {"title": "4 - Verbose", "enum": [4]}
         ]
       },
       "authTimeoutMinutes": {
-        "title": "<b>Timeout to Re-Authenticate Session (OPTIONAL)</b>",
+        "title": "<b>Timeout to Re-Authenticate Session</b>",
         "type": "integer",
         "placeholder": 10,
         "description": "(<u>WARNING:</u> choosing a time less than 10 minutes could possibly ban/disable your account from Alarm.com.)"
       },
       "pollTimeoutSeconds": {
-        "title": "<b>Device Polling Interval (OPTIONAL)<b>",
+        "title": "<b>Device Polling Interval<b>",
         "type": "integer",
         "placeholder": 60,
         "description": "(<u>WARNING:</u> choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com.)"
       },
       "armingModes": {
-        "title": "<b>Alarm.com arming modes (OPTIONAL)</b>. <p>(<u>WARNING:</u> the Alarm.com webAPI does not support setting silent arming to true and this feature does not work at this time.)",
+        "title": "<b>Alarm.com arming modes</b>.<p>Not all panels are compatible with silent arming. Enabling this without proper support will break thatt arming type.",
         "type": "object",
         "properties": {
-            "away": {
-              "$ref": "#/definitions/arming_obj", "extendRefs": true
-            },
-            "night": {
-              "$ref": "#/definitions/arming_obj", "extendRefs": true
-            },
-            "stay": {
-              "$ref": "#/definitions/arming_obj", "extendRefs": true
-            }
+          "away": {
+            "$ref": "#/definitions/arming_obj", "extendRefs": true
+          },
+          "night": {
+            "$ref": "#/definitions/arming_obj", "extendRefs": true
+          },
+          "stay": {
+            "$ref": "#/definitions/arming_obj", "extendRefs": true
+          }
         }
       },
       "ignoredDevices": {
         "title": "Ignored Devices",
-        "description": "IDs for Alarm.com accessories you wish to hide in Homekit. (OPTIONAL)",
+        "description": "IDs for Alarm.com accessories you wish to hide in Homekit.",
         "type": "array",
         "maxItems": 0,
         "items": {
