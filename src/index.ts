@@ -296,6 +296,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         })
         .catch(err => {
           this.log.error(`loginSession Error: ${err.message}`);
+          this.log.info('Reinitializing Alarm.com login.');
           this.authOpts.expires = +new Date() - 10000; // set `this.authOpts.expires` to the past to reinitiate loginSessions loop
         });
     }
@@ -418,6 +419,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       })
       .catch(err => {
         this.log.error(`refreshDevices Error: ${err.message}`);
+        this.log.info('Reinitializing Alarm.com login.');
         this.authOpts.expires = +new Date() - 10000; // set `this.authOpts.expires` to the past to reinitiate loginSessions loop
       });
   }
