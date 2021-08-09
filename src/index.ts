@@ -86,7 +86,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private logLevel: number;
   private armingModes: any;
   private ignoredDevices: string[];
-  // private useMFA: boolean;
   private mfaToken?: string;
 
   /**
@@ -102,7 +101,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.config = config || { platform: PLUGIN_NAME };
     this.logLevel = this.config.logLevel || LOG_LEVEL;
     this.ignoredDevices = this.config.ignoredDevices || [];
-    // this.useMFA = this.config.useMFA || false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : null;
 
     this.config.authTimeoutMinutes = this.config.authTimeoutMinutes || AUTH_TIMEOUT_MINS;
