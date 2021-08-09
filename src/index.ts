@@ -80,13 +80,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * Used to keep track of restored, cached accessories
    * @private
    */
-  public readonly accessories: PlatformAccessory[] = [];
+  private readonly accessories: PlatformAccessory[] = [];
   private authOpts: AuthOpts;
   private config: PlatformConfig;
   private logLevel: number;
   private armingModes: any;
   private ignoredDevices: string[];
-  public useMFA: boolean;
+  // private useMFA: boolean;
   private mfaToken?: string;
 
   /**
@@ -102,14 +102,14 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.config = config || { platform: PLUGIN_NAME };
     this.logLevel = this.config.logLevel || LOG_LEVEL;
     this.ignoredDevices = this.config.ignoredDevices || [];
-    this.useMFA = this.config.useMFA || false;
+    // this.useMFA = this.config.useMFA || false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : null;
 
     this.config.authTimeoutMinutes = this.config.authTimeoutMinutes || AUTH_TIMEOUT_MINS;
     this.config.pollTimeoutSeconds = this.config.pollTimeoutSeconds || POLL_TIMEOUT_SECS;
 
     this.authOpts = {
-      expires: +new Date() - 1000, // current time less 1 second
+      expires: +new Date() - 1000, // initialize as current time less 1 second
     } as AuthOpts;
 
     // Default arming mode options
@@ -296,8 +296,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
         })
         .catch(err => {
           this.log.error(`loginSession Error: ${err.message}`);
-          this.log.info('Reinitializing Alarm.com login.');
-          this.authOpts.expires = +new Date() - 10000; // set `this.authOpts.expires` to the past to reinitiate loginSessions loop
+          this.log.info('Refreshing session authentication.');
+          this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
         });
     }
     return this.authOpts;
@@ -419,8 +419,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
       })
       .catch(err => {
         this.log.error(`refreshDevices Error: ${err.message}`);
-        this.log.info('Reinitializing Alarm.com login.');
-        this.authOpts.expires = +new Date() - 10000; // set `this.authOpts.expires` to the past to reinitiate loginSessions loop
+        this.log.info('Refreshing session authentication.');
+        this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
       });
   }
 
