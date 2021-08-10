@@ -69,3 +69,4 @@ typings/
 
 dist/
 P/
+.DS_Store
