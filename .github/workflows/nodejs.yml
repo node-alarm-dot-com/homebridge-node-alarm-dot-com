@@ -34,7 +34,7 @@ jobs:
 
   publish-npm:
     # publish only if we are on our own repo
-    if: github.repository == 'node-alarm-dot-com/homebridge-node-alarm-dot-com' && github.event_name == 'release'
+    if: github.repository == 'DMBlakeley/homebridge-node-alarm-dot-com' && github.event_name == 'release'
 
     needs: build # only run if build succeeds
 
