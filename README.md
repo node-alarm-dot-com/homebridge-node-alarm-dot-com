@@ -1,3 +1,6 @@
+<h3>NOTE: This is a test version which incorporates functional and TypeScript improvements to [homebridge-node-alarm-dot-com](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com).</h3>
+-------------------------------------------------------------------
+
 # Alarm.com plugin for Homebridge using Node.js
 
 Alarm.com plugin for [Homebridge](https://github.com/nfarina/homebridge) using the [node-alarm-dot-com](https://github.com/node-alarm-dot-com/node-alarm-dot-com) interface.
