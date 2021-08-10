@@ -22,7 +22,7 @@ import {
   LOCK_STATES,
   SENSOR_STATES,
   SYSTEM_STATES,
-} from 'node-alarm-dot-com/dist/_models/States';
+} from 'node-alarm-dot-com-2/dist/_models/States';
 
 import path from 'path';
 
@@ -45,12 +45,12 @@ import {
   SensorState,
   FlattenedSystemState, 
   DeviceState,
-} from 'node-alarm-dot-com';
+} from 'node-alarm-dot-com-2';
 
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 
 let hap: HAP;
-const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
+const PLUGIN_ID = 'homebridge-node-alarm-dot-com-2';
 const PLUGIN_NAME = 'Alarmdotcom';
 const MANUFACTURER = 'Alarm.com';
 const AUTH_TIMEOUT_MINS = 10; // default for session authentication refresh
