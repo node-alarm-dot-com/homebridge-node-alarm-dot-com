@@ -1,6 +1,6 @@
 {
   "name": "homebridge-node-alarm-dot-com-2",
-  "version": "1.7.2-beta.12",
+  "version": "1.7.2-beta.13",
   "betaVersion": "1.7.2",
   "description": "Alarm.com plugin for Homebridge using Node.js",
   "author": {
@@ -21,17 +21,19 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com.git"
+    "url": "git+https://github.com/DMBlakeley/homebridge-node-alarm-dot-com.git"
   },
-  "homepage": "https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com#readme",
+  "homepage": "https://github.com/DMBlakeley/homebridge-node-alarm-dot-com#readme",
   "bugs": {
-    "url": "https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/issues"
+    "url": "https://github.com/DMBlakeley/homebridge-node-alarm-dot-com/issues"
   },
   "main": "dist/index.js",
   "files": [
     "LICENSE",
-    "dist",
-    "config.schema.json"
+    "README.md",
+    "dist/**/*",
+    "config.schema.json",
+    "package.json"
   ],
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -50,14 +52,14 @@
   },
   "dependencies": {
     "node-alarm-dot-com-2": "^1.11.0-beta.7",
-    "node-fetch": "^3.0.0-beta.10",
+    "node-fetch": "3.0.0-beta.9",
     "polling-to-event": "^2.1.0"
   },
   "devDependencies": {
-    "@types/node": "^15.14.2",
-    "@typescript-eslint/eslint-plugin": "^4.28.3",
-    "@typescript-eslint/parser": "^4.28.3",
-    "eslint": "^7.30.0",
+    "@types/node": "^15.14.7",
+    "@typescript-eslint/eslint-plugin": "^4.29.1",
+    "@typescript-eslint/parser": "^4.29.1",
+    "eslint": "^7.32.0",
     "homebridge": "^1.3.4",
     "nodemon": "^2.0.12",
     "rimraf": "^3.0.2",

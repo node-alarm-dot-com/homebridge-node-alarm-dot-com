@@ -431,7 +431,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param {Object} partition  Passed in partition object from Alarm.com
    */
-  addPartition(partition) {
+  addPartition(partition): void {
     const id = partition.id;
     let accessory = this.accessories.find(accessory => accessory.context.accID === id);
     if (accessory) {
@@ -467,7 +467,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param accessory  The accessory representing the alarm panel.
    */
-  setupPartition(accessory: PlatformAccessory) {
+  setupPartition(accessory: PlatformAccessory): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const model = 'Security Panel';
@@ -507,7 +507,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param accessory  The accessory representing the alarm panel.
    * @param partition  The alarm panel parameters from Alarm.com.
    */
-  statPartitionState(accessory: PlatformAccessory, partition) {
+  statPartitionState(accessory: PlatformAccessory, partition): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const state = getPartitionState(partition.attributes.state);
@@ -826,7 +826,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param light  The light accessory parameters from Alarm.com.
    * @param callback
    */
-  statLightState(accessory: PlatformAccessory, light: LightState, callback?: CharacteristicSetCallback) {
+  statLightState(accessory: PlatformAccessory, light: LightState, callback?: CharacteristicSetCallback): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const newState = getLightState(light.attributes.state);
@@ -1428,7 +1428,7 @@ function getLightState(state: number): CharacteristicValue {
  * @param state  The state as defined by Alarm.com.
  * @returns {number|*}  The state as defines it.
  */
-function getLockState(state: number) {
+function getLockState(state: number): CharacteristicValue {
   switch (state) {
     case LOCK_STATES.UNSECURED:
       return Characteristic.LockCurrentState.UNSECURED;
@@ -1445,7 +1445,7 @@ function getLockState(state: number) {
  * @param state  The state as defined by Alarm.com.
  * @returns {number|*}  The state as defines it.
  */
-function getGarageState(state: number) {
+function getGarageState(state: number): CharacteristicValue {
   switch (state) {
     case GARAGE_STATES.OPEN:
       return Characteristic.CurrentDoorState.OPEN;
