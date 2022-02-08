@@ -907,7 +907,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     accessory.context.state = on;
 
     await this.loginSession()
-      .then(res => method(id, res, accessory.context.lightLevel ?? 100))
+      .then(res => method(id, res, accessory.context.lightLevel ?? 100, accessory.context.isDimmer))
       .then(res => res.data)
       .then(light => {
         this.statLightState(accessory, light, callback);
