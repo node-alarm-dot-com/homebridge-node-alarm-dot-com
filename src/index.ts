@@ -559,13 +559,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
         method = armStay;
         opts.noEntryDelay = this.armingModes.stay.noEntryDelay;
         opts.silentArming = this.armingModes.stay.silentArming;
-        opts.silentArming = this.armingModes.stay.nightArming;
+        opts.nightArming = this.armingModes.stay.nightArming;
         break;
       case Characteristic.SecuritySystemTargetState.NIGHT_ARM:
         method = armStay;
         opts.noEntryDelay = this.armingModes.night.noEntryDelay;
         opts.silentArming = this.armingModes.night.silentArming;
-        opts.silentArming = this.armingModes.night.nightArming;
+        opts.nightArming = this.armingModes.night.nightArming;
         break;
       case Characteristic.SecuritySystemTargetState.AWAY_ARM:
         method = armAway;
