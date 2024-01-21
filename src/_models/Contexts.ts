@@ -81,6 +81,7 @@ export interface ThermostatContext extends BaseContext {
   humidityLevel: CharacteristicValue,
 }
 
+
 // Region: Function Casts
 
 export function isPartition(accessory: PlatformAccessory): accessory is PlatformAccessory<PartitionContext> {
