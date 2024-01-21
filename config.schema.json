@@ -98,7 +98,8 @@
           "type": "string",
           "placeholder": "96922426-1 (Example)"
         }
-      }
+      },
+      "platform":"Alarmdotcom"
     }
   }
 }

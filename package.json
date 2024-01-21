@@ -51,6 +51,9 @@
     "homebridge": ">=1.4.0"
   },
   "dependencies": {
+    "-": "^0.0.1",
+    "g": "^2.0.1",
+    "homebridge-node-alarm-dot-com": "^1.10.0",
     "node-alarm-dot-com": "2.1.0",
     "polling-to-event": "^2.1.0"
   },
