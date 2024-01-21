@@ -33,6 +33,7 @@ export interface SensorContext extends BaseContext {
   type: SensorType;
 }
 
+//Light
 export interface LightContext extends BaseContext {
   state: CharacteristicValue;
   desiredState: CharacteristicValue;
@@ -41,6 +42,7 @@ export interface LightContext extends BaseContext {
   lightType: string;
 }
 
+//Partition
 export interface PartitionContext extends BaseContext {
   state: CharacteristicValue;
   desiredState: CharacteristicValue;
@@ -48,6 +50,7 @@ export interface PartitionContext extends BaseContext {
   partitionType: 'default';
 }
 
+//Lock
 export interface LockContext extends BaseContext {
   accID: string;
   name: string;
@@ -56,6 +59,7 @@ export interface LockContext extends BaseContext {
   lockType: string;
 }
 
+//Garage
 export interface GarageContext extends BaseContext {
   accID: string;
   name: string;
@@ -64,6 +68,7 @@ export interface GarageContext extends BaseContext {
   garageType: string;
 }
 
+//Thermostat
 export interface ThermostatContext extends BaseContext {
   accID: string,
   name: string,
