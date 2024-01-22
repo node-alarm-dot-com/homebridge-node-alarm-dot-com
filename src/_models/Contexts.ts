@@ -83,6 +83,7 @@ export interface ThermostatContext extends BaseContext {
 
 // Region: Function Casts
 
+
 export function isPartition(accessory: PlatformAccessory): accessory is PlatformAccessory<PartitionContext> {
   return (accessory as PlatformAccessory<PartitionContext>).context.partitionType !== undefined;
 }
