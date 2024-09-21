@@ -52,20 +52,20 @@
     "homebridge": ">=1.4.0"
   },
   "dependencies": {
-    "node-alarm-dot-com": "2.1.0",
+    "node-alarm-dot-com": "2.1.1",
     "polling-to-event": "^2.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.8.4",
-    "@typescript-eslint/eslint-plugin": "^6.7.5",
-    "@typescript-eslint/parser": "^6.7.5",
-    "eslint": "8.51.0",
-    "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-prettier": "^5.0.0",
-    "homebridge": "^1.6.1",
+    "@types/node": "^22.5.5",
+    "@typescript-eslint/eslint-plugin": "^6.5.0",
+    "@typescript-eslint/parser": "^6.5.0",
+    "eslint": "8.48.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "homebridge": "^1.8.4",
     "homebridge-config-ui-x": "latest",
-    "rimraf": "^4.4.1",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.2.2"
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2"
   }
 }

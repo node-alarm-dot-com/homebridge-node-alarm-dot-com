@@ -14,6 +14,9 @@ export class CustomLogger implements Logger {
     this.logger = logger;
     this.logLevel = logLevel;
   }
+  success(message: string, ...parameters: unknown[]): void {
+    this.debug(message, parameters);
+  }
 
   info(message: string, ...parameters: unknown[]): void {
     if (this.logLevel >= CustomLogLevel.NOTICE) this.logger.info(message, ...parameters);

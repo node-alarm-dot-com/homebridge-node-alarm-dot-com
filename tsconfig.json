@@ -2,7 +2,7 @@
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig.json to read more about this file */
     "module": "commonjs",
-    "target": "ES2018",
+    "target": "ES2022",
     "declaration": true,
     "outDir": "./dist",
     "esModuleInterop": true,
@@ -12,7 +12,11 @@
       "ES2015",
       "ES2016",
       "ES2017",
-      "ES2018", "dom"
+      "ES2018",
+      "ES2019",
+      "ES2020",
+      "ES2021",
+      "ES2022",
     ],
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true
