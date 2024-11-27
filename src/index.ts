@@ -53,7 +53,6 @@ import {
   ThermostatState
 } from 'node-alarm-dot-com';
 
-import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import {
   BaseContext,
   GarageContext,
@@ -69,6 +68,7 @@ import {
   SensorContext,
   ThermostatContext
 } from './_models/Contexts';
+import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1802,7 +1802,7 @@ function getSensorState(sensor: SensorState): CharacteristicValue {
   }
 
   if (sensor.attributes.deviceType == SensorType.Glass_Break) {
-    return sensor.attributes.state === 2
+    return sensor.attributes.openClosedStatus === 2
       ? hapCharacteristic.ContactSensorState.CONTACT_DETECTED
       : hapCharacteristic.ContactSensorState.CONTACT_NOT_DETECTED;
   }
