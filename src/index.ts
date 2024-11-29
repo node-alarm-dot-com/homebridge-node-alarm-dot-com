@@ -142,17 +142,20 @@ class ADCPlatform implements DynamicPlatformPlugin {
       away: {
         nightArming: false,
         noEntryDelay: false,
-        silentArming: false
+        silentArming: false,
+        forceBypass: false
       },
       night: {
         nightArming: true,
         noEntryDelay: false,
-        silentArming: true
+        silentArming: true,
+        forceBypass: false
       },
       stay: {
         nightArming: false,
         noEntryDelay: false,
-        silentArming: true
+        silentArming: true,
+        forceBypass: false
       }
     };
 
@@ -162,6 +165,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.armingModes[key].nightArming = Boolean(this.config.armingModes[key].nightArming);
         this.armingModes[key].noEntryDelay = Boolean(this.config.armingModes[key].noEntryDelay);
         this.armingModes[key].silentArming = Boolean(this.config.armingModes[key].silentArming);
+        this.armingModes[key].forceBypass = Boolean(this.config.armingModes[key].forceBypass);
       }
     }
 
@@ -677,18 +681,21 @@ class ADCPlatform implements DynamicPlatformPlugin {
         opts.noEntryDelay = this.armingModes.stay.noEntryDelay;
         opts.silentArming = this.armingModes.stay.silentArming;
         opts.nightArming = this.armingModes.stay.nightArming;
+        opts.forceBypass = this.armingModes.stay.forceBypass;
         break;
       case hapCharacteristic.SecuritySystemTargetState.NIGHT_ARM:
         method = armStay;
         opts.noEntryDelay = this.armingModes.night.noEntryDelay;
         opts.silentArming = this.armingModes.night.silentArming;
         opts.nightArming = this.armingModes.night.nightArming;
+        opts.forceBypass = this.armingModes.night.forceBypass;
         break;
       case hapCharacteristic.SecuritySystemTargetState.AWAY_ARM:
         method = armAway;
         opts.noEntryDelay = this.armingModes.away.noEntryDelay;
         opts.silentArming = this.armingModes.away.silentArming;
         opts.nightArming = this.armingModes.away.nightArming;
+        opts.forceBypass = this.armingModes.away.forceBypass;
         break;
       case hapCharacteristic.SecuritySystemTargetState.DISARM:
         method = disarm;

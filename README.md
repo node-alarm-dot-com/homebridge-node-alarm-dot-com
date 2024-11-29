@@ -28,9 +28,9 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
 - Locks
   - Lock/Unlock switch
 - Garage Doors
-  - Open/Close switch 
-- Thermostats 
-  - Set mode Off/Heat/Cool/Auto 
+  - Open/Close switch
+- Thermostats
+  - Set mode Off/Heat/Cool/Auto
   - Set desired Heat/Cool temperatures
 
 # Installation
@@ -57,17 +57,20 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
     "away": {
       "noEntryDelay": false,
       "silentArming": false,
-      "nightArming": false
+      "nightArming": false,
+      "forceBypass": false
     },
     "night": {
       "noEntryDelay": false,
       "silentArming": false,
-      "nightArming": false
+      "nightArming": false,
+      "forceBypass": false
     },
     "stay": {
       "noEntryDelay": false,
       "silentArming": false,
-      "nightArming": false
+      "nightArming": false,
+      "forceBypass": false
     }
   },
   "platform": "Alarmdotcom"

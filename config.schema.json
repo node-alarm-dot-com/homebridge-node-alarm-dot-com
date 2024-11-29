@@ -10,7 +10,8 @@
         "properties": {
           "noEntryDelay": {"type": "boolean", "default": false},
           "silentArming": {"type": "boolean", "default": false},
-          "nightArming": {"type":  "boolean", "default":  false}
+          "nightArming": {"type":  "boolean", "default":  false},
+          "forceBypass": {"type":  "boolean", "default":  false}
         }
       }
     },
