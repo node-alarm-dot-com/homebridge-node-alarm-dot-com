@@ -57,17 +57,20 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
     "away": {
       "noEntryDelay": false,
       "silentArming": false,
-      "nightArming": false
+      "nightArming": false,
+      "forceBypass": false
     },
     "night": {
       "noEntryDelay": false,
       "silentArming": false,
-      "nightArming": false
+      "nightArming": false,
+      "forceBypass": false
     },
     "stay": {
       "noEntryDelay": false,
       "silentArming": false,
-      "nightArming": false
+      "nightArming": false,
+      "forceBypass": false
     }
   },
   "platform": "Alarmdotcom"
