@@ -12,6 +12,8 @@ Alarm.com plugin for [Homebridge](https://github.com/homebridge/homebridge) usin
 
 This is a plugin for Homebridge, allowing communication with Alarm.com endpoints.
 
+**NOTICE: This plugin is in maintenance mode as I have proven not to have much time over the past several years. Issues will be worked on as I can get to them (which is not often). I would welcome contributions and an extra maintainer or two!**
+
 # Supported Features
 
 - Two-Factor Authentication
