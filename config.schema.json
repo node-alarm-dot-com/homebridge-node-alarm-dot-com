@@ -49,6 +49,16 @@
           "functionBody": "return model.useMFA === true"
         }
       },
+      "systemIds": {
+        "title": "Manual System IDs",
+        "description": "Optional Alarm.com system IDs to use instead of /web/api/identities. Use this if Alarm.com returns 403 NotAllowed for identities.",
+        "type": "array",
+        "items": {
+          "title": "System ID",
+          "type": "string",
+          "placeholder": "8540160"
+        }
+      },
       "logLevel": {
         "title": "<b>Log Level</b>",
         "type": "integer",

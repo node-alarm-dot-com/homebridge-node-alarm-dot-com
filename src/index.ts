@@ -123,6 +123,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private ignoredDevices: string[];
   private useMFA: boolean;
   private mfaToken?: string;
+  private manualSystemIds: string[];
   private tempDisplayUnitSetting: number;
 
   /**
@@ -140,6 +141,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.ignoredDevices = this.config.ignoredDevices ?? [];
     this.useMFA = this.config.useMFA ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : null;
+    this.manualSystemIds = this.getManualSystemIds();
     this.tempDisplayUnitSetting = hapCharacteristic.TemperatureDisplayUnits.CELSIUS;
 
     this.config.authTimeoutMinutes = this.config.authTimeoutMinutes ?? AUTH_TIMEOUT_MINS;
@@ -343,6 +345,16 @@ class ADCPlatform implements DynamicPlatformPlugin {
   async loginSession(): Promise<AuthOpts> {
     const now = +new Date();
     if (now > this.authOpts.expires) {
+      const manualAuthOpts = this.buildManualAuthOpts();
+      if (manualAuthOpts) {
+        manualAuthOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
+        this.authOpts = manualAuthOpts;
+        this.log.debug(
+          `Using manually configured Alarm.com system IDs: ${this.manualSystemIds.join(', ')}`
+        );
+        return this.authOpts;
+      }
+
       this.log.debug(`Logging into Alarm.com as ${this.config.username}`);
       try {
         const authOpts = await login(
@@ -405,6 +417,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * This method makes a call to alarm.com in order to retrieve global account information.
    */
   async getAccountSettings() {
+    if (this.manualSystemIds.length > 0) {
+      this.log.debug('Skipping account settings lookup because manual system IDs are configured.');
+      return;
+    }
+
     try {
       const authOpts = await this.loginSession();
       const identities = await getIdentitiesState(authOpts.cookie, authOpts.ajaxKey);
@@ -425,6 +442,66 @@ class ADCPlatform implements DynamicPlatformPlugin {
       );
       this.log.error(describeError(e));
     }
+  }
+
+  private getManualSystemIds(): string[] {
+    const configured = this.config.systemIds;
+    if (!Array.isArray(configured)) {
+      return [];
+    }
+
+    return configured
+      .map((value) => String(value).trim())
+      .filter((value) => value.length > 0);
+  }
+
+  private getConfiguredCookieString(): string | null {
+    const cookieValue = this.config.cookie ?? this.config.mfaCookie;
+    if (typeof cookieValue !== 'string') {
+      return null;
+    }
+
+    const trimmed = cookieValue.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private extractAjaxKeyFromCookie(cookieString: string): string | null {
+    const match = /(?:^|;\s*)afg=([^;]+)/.exec(cookieString);
+    return match ? match[1] : null;
+  }
+
+  private buildManualAuthOpts(): AuthOpts | null {
+    if (this.manualSystemIds.length === 0) {
+      return null;
+    }
+
+    const cookie = this.getConfiguredCookieString();
+    if (!cookie) {
+      this.log.error(
+        'Manual system IDs are configured, but no cookie string was found in the plugin config.'
+      );
+      return null;
+    }
+
+    const ajaxKey = this.extractAjaxKeyFromCookie(cookie);
+    if (!ajaxKey) {
+      this.log.error(
+        'Manual system IDs are configured, but the cookie string does not contain an afg cookie.'
+      );
+      return null;
+    }
+
+    return {
+      cookie,
+      ajaxKey,
+      systems: this.manualSystemIds,
+      identities: {
+        data: [],
+        included: [],
+        meta: {}
+      },
+      expires: +new Date() - 1
+    } as AuthOpts;
   }
 
   /**
