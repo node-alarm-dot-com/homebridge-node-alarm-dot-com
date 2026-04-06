@@ -13,6 +13,7 @@ import {
 } from 'homebridge';
 
 import fs from 'fs';
+import { inspect } from 'util';
 
 import {
   GARAGE_STATES,
@@ -85,6 +86,17 @@ let hapService: HAP['Service'];
 let hapCharacteristic: HAP['Characteristic'];
 let uuidGen: typeof import('hap-nodejs/dist/lib/util/uuid');
 
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack || error.message;
+  }
+
+  return inspect(error, {
+    depth: 6,
+    breakLength: 120
+  });
+}
+
 export = (api: API): void => {
   hap = api.hap;
   platformAccessory = api.platformAccessory;
@@ -111,6 +123,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private ignoredDevices: string[];
   private useMFA: boolean;
   private mfaToken?: string;
+  private manualSystemIds: string[];
   private tempDisplayUnitSetting: number;
 
   /**
@@ -128,6 +141,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.ignoredDevices = this.config.ignoredDevices ?? [];
     this.useMFA = this.config.useMFA ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : null;
+    this.manualSystemIds = this.getManualSystemIds();
     this.tempDisplayUnitSetting = hapCharacteristic.TemperatureDisplayUnits.CELSIUS;
 
     this.config.authTimeoutMinutes = this.config.authTimeoutMinutes ?? AUTH_TIMEOUT_MINS;
@@ -331,21 +345,44 @@ class ADCPlatform implements DynamicPlatformPlugin {
   async loginSession(): Promise<AuthOpts> {
     const now = +new Date();
     if (now > this.authOpts.expires) {
+      const manualAuthOpts = this.buildManualAuthOpts();
+      if (manualAuthOpts) {
+        manualAuthOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
+        this.authOpts = manualAuthOpts;
+        this.log.debug(
+          `Using manually configured Alarm.com system IDs: ${this.manualSystemIds.join(', ')}`
+        );
+        return this.authOpts;
+      }
+
       this.log.debug(`Logging into Alarm.com as ${this.config.username}`);
-      //const authOpts = await login(this.config.username, this.config.password, this.mfaToken);
-      await login(this.config.username, this.config.password, this.useMFA ? this.mfaToken : null)
-        .then((authOpts) => {
-          // Cache login response and estimated expiration time
-          authOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
-          this.authOpts = authOpts;
-          this.log.debug(`Logged into Alarm.com as ${this.config.username}`);
-        })
-        .catch((err) => {
-          this.log.error(`loginSession Error: ${err.message}`);
-          this.log.info('Refreshing session authentication.');
-          this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
-        });
+      try {
+        const authOpts = await login(
+          this.config.username,
+          this.config.password,
+          this.useMFA ? this.mfaToken : null
+        );
+
+        authOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
+        this.authOpts = authOpts;
+        this.log.debug(`Logged into Alarm.com as ${this.config.username}`);
+        this.log.debug(
+          `Alarm.com auth state: ajaxKey=${Boolean(authOpts.ajaxKey)}, systems=${Array.isArray(authOpts.systems) ? authOpts.systems.length : 'invalid'}`
+        );
+      } catch (err) {
+        this.log.error(`loginSession Error: ${describeError(err)}`);
+        this.log.info('Refreshing session authentication.');
+        this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes;
+        throw err;
+      }
     }
+
+    if (!Array.isArray(this.authOpts.systems)) {
+      throw new Error(
+        `Alarm.com login returned invalid auth state: systems=${inspect(this.authOpts.systems, { depth: 4 })}`
+      );
+    }
+
     return this.authOpts;
   }
 
@@ -380,9 +417,19 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * This method makes a call to alarm.com in order to retrieve global account information.
    */
   async getAccountSettings() {
+    if (this.manualSystemIds.length > 0) {
+      this.log.debug('Skipping account settings lookup because manual system IDs are configured.');
+      return;
+    }
+
     try {
       const authOpts = await this.loginSession();
       const identities = await getIdentitiesState(authOpts.cookie, authOpts.ajaxKey);
+      if (!identities || !Array.isArray(identities.data)) {
+        throw new Error(
+          `Unexpected identities response shape: ${inspect(identities, { depth: 6, breakLength: 120 })}`
+        );
+      }
       const identity = identities.data[0];
       if (identity) {
         this.tempDisplayUnitSetting = identity.attributes.localizeTempUnitsToCelsius
@@ -393,12 +440,68 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.log.error(
         `There was an error retrieving account settings. Please check that your credentials are correct and restart the plugin.`
       );
-      if (typeof e === typeof String) {
-        this.log.error(e);
-      } else if (e instanceof Error) {
-        this.log.error(e.message);
-      }
+      this.log.error(describeError(e));
     }
+  }
+
+  private getManualSystemIds(): string[] {
+    const configured = this.config.systemIds;
+    if (!Array.isArray(configured)) {
+      return [];
+    }
+
+    return configured
+      .map((value) => String(value).trim())
+      .filter((value) => value.length > 0);
+  }
+
+  private getConfiguredCookieString(): string | null {
+    const cookieValue = this.config.cookie ?? this.config.mfaCookie;
+    if (typeof cookieValue !== 'string') {
+      return null;
+    }
+
+    const trimmed = cookieValue.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private extractAjaxKeyFromCookie(cookieString: string): string | null {
+    const match = /(?:^|;\s*)afg=([^;]+)/.exec(cookieString);
+    return match ? match[1] : null;
+  }
+
+  private buildManualAuthOpts(): AuthOpts | null {
+    if (this.manualSystemIds.length === 0) {
+      return null;
+    }
+
+    const cookie = this.getConfiguredCookieString();
+    if (!cookie) {
+      this.log.error(
+        'Manual system IDs are configured, but no cookie string was found in the plugin config.'
+      );
+      return null;
+    }
+
+    const ajaxKey = this.extractAjaxKeyFromCookie(cookie);
+    if (!ajaxKey) {
+      this.log.error(
+        'Manual system IDs are configured, but the cookie string does not contain an afg cookie.'
+      );
+      return null;
+    }
+
+    return {
+      cookie,
+      ajaxKey,
+      systems: this.manualSystemIds,
+      identities: {
+        data: [],
+        included: [],
+        meta: {}
+      },
+      expires: +new Date() - 1
+    } as AuthOpts;
   }
 
   /**
@@ -524,7 +627,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         });
       })
       .catch((err) => {
-        this.log.error(`refreshDevices Error: ${err.message}`);
+        this.log.error(`refreshDevices Error: ${describeError(err)}`);
         this.log.info('Refreshing session authentication.');
         this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
       });
@@ -1769,6 +1872,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
  *   number, number, number, number]>}  See SystemState.ts for return type.
  */
 async function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]> {
+  if (!res || !Array.isArray(res.systems)) {
+    throw new Error(
+      `Invalid Alarm.com system list in auth response: ${inspect(res, { depth: 6, breakLength: 120 })}`
+    );
+  }
+
   return Promise.all(res.systems.map((id: string) => getCurrentState(id, res)));
 }
 

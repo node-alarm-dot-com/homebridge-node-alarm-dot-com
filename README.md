@@ -52,6 +52,7 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
   "password": "<YOUR ALARM.COM PASSWORD>",
   "useMFA": true,
   "mfaCookie": "<USE INSTRUCTIONS IN THE WIKI>",
+  "systemIds": ["8540160"],
   "logLevel": 4,
   "authTimeoutMinutes": 10,
   "pollTimeoutSeconds": 30,
@@ -87,6 +88,7 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
 - `password`: Alarm.com login password, same as app (required)
 - `useMFA`: boolean indicating if your account requires MFA (required)
 - `mfaCookie`: MFA cookie to be sent with your API requests. Only needed if "useMFA" is set to `true`
+- `systemIds`: Optional array of Alarm.com system IDs. If configured, the plugin skips `/web/api/identities` and uses these IDs directly. This is intended as a workaround for `403 NotAllowed` responses from the identities endpoint.
 - `armingModes`: Object of objects with arming mode options of boolean choices (**WARNING:** the Alarm.com webAPI does not support setting silent arming to true and this feature does not work at this time)
 - `authTimeoutMinutes`: Timeout to Re-Authenticate session (**WARNING:** choosing a time less than 10 minutes could possibly ban/disable your account from Alarm.com)
 - `pollTimeoutSeconds`: Device polling interval (**WARNING:** choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com)
@@ -97,6 +99,8 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
   - **3 = GENERAL NOTICES, ERRORS and WARNINGS (default)**
   - 4 = VERBOSE (everything including development output, this also generates a file `ADC-SystemStates.json` with the payload details from Alarm.com in the same folder as the Homebridge config.json file)
 - `ignoredDevices`: An array of IDs for Alarm.com accessories you wish to hide in Homekit
+
+When `systemIds` is configured, the plugin derives the AJAX key from the configured cookie string (`cookie` or `mfaCookie`) and bypasses the identities lookup during login and account-settings fetch.
 
 # Troubleshooting
 
