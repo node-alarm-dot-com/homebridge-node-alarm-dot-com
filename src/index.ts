@@ -1723,7 +1723,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * Useful for updating homebridge with the list of accessories present.
    */
   removeAccessories(): void {
-    this.accessories.forEach((accessory) => this.removeAccessory(accessory));
+    [...this.accessories].forEach((accessory) => this.removeAccessory(accessory));
   }
 
   /**
