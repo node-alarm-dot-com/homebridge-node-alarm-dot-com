@@ -112,6 +112,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private useMFA: boolean;
   private mfaToken?: string;
   private tempDisplayUnitSetting: number;
+  private timerHandle: NodeJS.Timeout | undefined;
 
   /**
    * The platform class constructor used when registering a plugin.
@@ -186,6 +187,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       }
 
       this.api.on(APIEvent.DID_FINISH_LAUNCHING, this.registerAlarmSystem.bind(this));
+      this.api.on(APIEvent.SHUTDOWN, this.cleanup.bind(this));
     }
   }
 
@@ -272,16 +274,24 @@ class ADCPlatform implements DynamicPlatformPlugin {
       });
 
     // Start a timer to periodically refresh status
-    this.timerLoop();
+    this.timerHandle = this.timerLoop();
+  }
+
+  cleanup(): void {
+    this.log.info('Cleaning up homebridge-node-alarm-dot-com');
+    if (this.timerHandle) {
+      clearTimeout(this.timerHandle);
+      this.timerHandle = undefined;
+    }
   }
 
   /**
    * Create a randomized timer to refresh device state
    */
-  timerLoop() {
+  timerLoop(): NodeJS.Timeout {
     // Create a randomized delay by adding between 0 - 30 seconds to timer
     const timerDelay = this.config.pollTimeoutSeconds * 1000 + 30000 * Math.random();
-    setTimeout(() => {
+    return setTimeout(() => {
       this.refreshDevices();
       this.timerLoop();
     }, timerDelay);
