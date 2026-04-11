@@ -393,7 +393,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.log.error(
         `There was an error retrieving account settings. Please check that your credentials are correct and restart the plugin.`
       );
-      if (typeof e === typeof String) {
+      if (typeof e === 'string') {
         this.log.error(e);
       } else if (e instanceof Error) {
         this.log.error(e.message);
