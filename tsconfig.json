@@ -8,6 +8,7 @@
     "esModuleInterop": true,
     "sourceMap": true,
     "strict": false,
+    "noImplicitAny": true,
     "lib": [
       "ES2015",
       "ES2016",
