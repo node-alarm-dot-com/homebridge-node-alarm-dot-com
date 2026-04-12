@@ -15,7 +15,7 @@ export class CustomLogger implements Logger {
     this.logLevel = logLevel;
   }
   success(message: string, ...parameters: unknown[]): void {
-    this.debug(message, parameters);
+    this.info(message, ...parameters);
   }
 
   info(message: string, ...parameters: unknown[]): void {
