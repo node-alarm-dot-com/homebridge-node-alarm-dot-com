@@ -71,8 +71,6 @@ import {
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-let hap: HAP;
 const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
 const PLUGIN_NAME = 'Alarmdotcom';
 const MANUFACTURER = 'Alarm.com';
@@ -86,7 +84,6 @@ let hapCharacteristic: HAP['Characteristic'];
 let uuidGen: typeof import('hap-nodejs/dist/lib/util/uuid');
 
 export = (api: API): void => {
-  hap = api.hap;
   platformAccessory = api.platformAccessory;
   hapService = api.hap.Service;
   hapCharacteristic = api.hap.Characteristic;
@@ -1706,14 +1703,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.log.info(`Removing ${accessory.context.name} (${accessory.context.accID}) from HomeBridge`);
     this.api.unregisterPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
     this.accessories.splice(this.accessories.indexOf(accessory), 1);
-  }
-
-  /**
-   * Removes all accessories from the platform, homebridge and HomeKit.
-   * Useful for updating homebridge with the list of accessories present.
-   */
-  removeAccessories(): void {
-    this.accessories.forEach((accessory) => this.removeAccessory(accessory));
   }
 
   /**
