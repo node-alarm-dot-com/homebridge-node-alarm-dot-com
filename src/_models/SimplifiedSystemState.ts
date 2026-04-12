@@ -3,7 +3,8 @@ import {
   LightState,
   LockState,
   PartitionState,
-  SensorState
+  SensorState,
+  ThermostatState
 } from 'node-alarm-dot-com';
 
 export interface SimplifiedSystemState {
@@ -12,4 +13,5 @@ export interface SimplifiedSystemState {
   lights: LightState[],
   locks: LockState[],
   garages: GarageState[],
+  thermostats: ThermostatState[],
 }

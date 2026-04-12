@@ -393,7 +393,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.log.error(
         `There was an error retrieving account settings. Please check that your credentials are correct and restart the plugin.`
       );
-      if (typeof e === typeof String) {
+      if (typeof e === 'string') {
         this.log.error(e);
       } else if (e instanceof Error) {
         this.log.error(e.message);
@@ -965,9 +965,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       accessory.getService(hapService.Lightbulb).updateCharacteristic(hapCharacteristic.Brightness, newBrightness);
     }
 
-    if (callback !== null) {
-      callback();
-    }
+    callback?.();
   }
 
   /**
@@ -1565,7 +1563,9 @@ class ADCPlatform implements DynamicPlatformPlugin {
     }
 
     if (accessory.context.supportsHumidity && humidityLevel !== accessory.context.humidityLevel) {
-      this.log.info(`Updating thermostat ${name} (${id}), humidity=${humidityLevel}, prev=${accessory.context.state}`);
+      this.log.info(
+        `Updating thermostat ${name} (${id}), humidity=${humidityLevel}, prev=${accessory.context.humidityLevel}`
+      );
 
       accessory.context.humidityLevel = humidityLevel;
 
@@ -1606,6 +1606,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
       case hapCharacteristic.CurrentHeatingCoolingState.OFF:
         newState = THERMOSTAT_STATES.OFF;
         break;
+      default: {
+        const msg = `Can't set thermostat to unknown value ${value}`;
+        this.log.warn(msg);
+        return callback(new Error(msg));
+      }
     }
 
     await this.loginSession()
@@ -1679,18 +1684,19 @@ class ADCPlatform implements DynamicPlatformPlugin {
   addAccessory(accessory: PlatformAccessory<BaseContext>, type: typeof hapService, model: string): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
-    this.accessories.push(accessory);
+    if (this.accessories.findIndex((a) => a.context.accID === id) > -1) {
+      this.log.warn(`Preventing adding existing ${model} ${name} with id ${id}`);
+      return;
+    }
+
     const serviceUUID = uuidGen.generate(id + type);
 
     // Setup HomeKit service
     accessory.addService(type, name, serviceUUID);
 
     // Register new accessory in HomeKit
-    if (this.accessories.findIndex((accessory) => accessory.context.accID === id) > -1) {
-      this.api.registerPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
-    } else {
-      this.log.warn(`Preventing adding existing ${model} ${name} with id ${id}`);
-    }
+    this.accessories.push(accessory);
+    this.api.registerPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
   }
 
   /**

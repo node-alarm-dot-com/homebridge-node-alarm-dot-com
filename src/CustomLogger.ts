@@ -15,7 +15,7 @@ export class CustomLogger implements Logger {
     this.logLevel = logLevel;
   }
   success(message: string, ...parameters: unknown[]): void {
-    this.debug(message, parameters);
+    this.debug(message, ...parameters);
   }
 
   info(message: string, ...parameters: unknown[]): void {
@@ -43,16 +43,16 @@ export class CustomLogger implements Logger {
   log(level: LogLevel, message: string, ...parameters: unknown[]): void {
     switch (level) {
       case LogLevel.DEBUG:
-        this.debug(message, parameters);
+        this.debug(message, ...parameters);
         break;
       case LogLevel.ERROR:
-        this.error(message, parameters);
+        this.error(message, ...parameters);
         break;
       case LogLevel.INFO:
-        this.info(message, parameters);
+        this.info(message, ...parameters);
         break;
       case LogLevel.WARN:
-        this.warn(message, parameters);
+        this.warn(message, ...parameters);
         break;
       default:
         break;
