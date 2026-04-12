@@ -41,6 +41,7 @@ import {
   login,
   openGarage,
   PartitionActionOptions,
+  PartitionState,
   SensorState,
   SensorType,
   setLightOff,
@@ -104,6 +105,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    */
   private readonly accessories: PlatformAccessory[] = [];
   private readonly accessoriesToUpdate: PlatformAccessory[] = [];
+  private isRefreshing = false;
   private authOpts: AuthOpts;
   private config: PlatformConfig;
   private logLevel: CustomLogLevel;
@@ -221,14 +223,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.log.debug('Registering system:');
         this.log.debug(JSON.stringify(res));
 
-        for (const device in res) {
-          if (device === 'partitions' && typeof res[device][0] === 'undefined') {
+        for (const device of Object.keys(res) as Array<keyof typeof res>) {
+          const devices = res[device];
+          if (device === 'partitions' && typeof devices[0] === 'undefined') {
             // Debug log if no partition. This can happen when someone doesn't have monitoring.
             this.log.debug(`Received no partitions from Alarm.com.`);
-          } else if (res[device].length > 0) {
-            this.log.info(`Received ${res[device].length} ${device} from Alarm.com`);
+          } else if (devices.length > 0) {
+            this.log.info(`Received ${devices.length} ${device} from Alarm.com`);
 
-            res[device].forEach((d: DeviceState) => {
+            devices.forEach((d: DeviceState) => {
               const deviceType = d.type;
               const realDeviceType = deviceType.split('/')[1];
               // Check so we don't add accessories which were already restored
@@ -238,7 +241,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
                 const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
                 if (!existingAccessory) {
                   if (realDeviceType === 'partition') {
-                    this.addPartition(d);
+                    this.addPartition(d as PartitionState);
                   } else if (realDeviceType === 'sensor') {
                     this.addSensor(d as SensorState);
                   } else if (realDeviceType === 'light') {
@@ -405,129 +408,143 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * Method to update state on accessories/devices.
    */
   async refreshDevices(): Promise<void> {
-    // Get latest account settings, notably C/F display setting
-    await this.getAccountSettings();
+    if (this.isRefreshing) {
+      this.log.debug('Skipping refresh, previous poll still in progress');
+      return;
+    }
+    this.isRefreshing = true;
 
-    await this.loginSession()
-      .then((res) => fetchStateForAllSystems(res))
-      .then((systemStates) => {
-        // writes systemStates payload to a file for debug/troubleshooting
-        if (this.logLevel > 3) {
-          this.writePayload(this.api.user.storagePath() + '/', 'ADC-SystemStates.json', JSON.stringify(systemStates));
-        }
+    try {
+      // Get latest account settings, notably C/F display setting
+      await this.getAccountSettings();
 
-        // break dist system components
-        systemStates.forEach((system) => {
-          if (system.partitions) {
-            system.partitions.forEach((partition) => {
-              const accessory = this.accessories.find(
-                (accessory) => accessory.context.accID === partition.id
-              ) as PlatformAccessory<PartitionContext>;
-              // Don't do anything if the device is ignored
-              if (!this.ignoredDevices.includes(partition.id)) {
-                // If this is a new device, add it to the system
-                if (!accessory) {
-                  return this.addPartition(partition);
-                }
-                // Get the current device state
-                this.statPartitionState(accessory, partition);
-              }
-            });
-          } else {
-            // fatal error, we require partitions and cannot continue
-            throw new Error('No partitions found, check configuration with security system provider');
+      await this.loginSession()
+        .then((res) => fetchStateForAllSystems(res))
+        .then((systemStates) => {
+          // writes systemStates payload to a file for debug/troubleshooting
+          if (this.logLevel > 3) {
+            this.writePayload(this.api.user.storagePath() + '/', 'ADC-SystemStates.json', JSON.stringify(systemStates));
           }
 
-          if (system.sensors) {
-            system.sensors.forEach((sensor) => {
-              const accessory = this.accessories.find(
-                (accessory) => accessory.context.accID === sensor.id
-              ) as PlatformAccessory<SensorContext>;
-              if (!this.ignoredDevices.includes(sensor.id)) {
-                if (!accessory) {
-                  return this.addSensor(sensor);
+          // break dist system components
+          systemStates.forEach((system) => {
+            if (system.partitions) {
+              system.partitions.forEach((partition) => {
+                const accessory = this.accessories.find(
+                  (accessory) => accessory.context.accID === partition.id
+                ) as PlatformAccessory<PartitionContext>;
+                // Don't do anything if the device is ignored
+                if (!this.ignoredDevices.includes(partition.id)) {
+                  // If this is a new device, add it to the system
+                  if (!accessory) {
+                    return this.addPartition(partition);
+                  }
+                  // Get the current device state
+                  this.statPartitionState(accessory, partition);
                 }
-                this.statSensorState(accessory, sensor);
-              }
-            });
-          } else {
-            this.log.info('No sensors found, ignore if expected, or check configuration with security system provider');
-          }
+              });
+            } else {
+              // fatal error, we require partitions and cannot continue
+              throw new Error('No partitions found, check configuration with security system provider');
+            }
 
-          if (system.lights) {
-            system.lights.forEach((light) => {
-              const accessory = this.accessories.find(
-                (accessory) => accessory.context.accID === light.id
-              ) as PlatformAccessory<LightContext>;
-              if (!this.ignoredDevices.includes(light.id)) {
-                if (!accessory) {
-                  return this.addLight(light);
+            if (system.sensors) {
+              system.sensors.forEach((sensor) => {
+                const accessory = this.accessories.find(
+                  (accessory) => accessory.context.accID === sensor.id
+                ) as PlatformAccessory<SensorContext>;
+                if (!this.ignoredDevices.includes(sensor.id)) {
+                  if (!accessory) {
+                    return this.addSensor(sensor);
+                  }
+                  this.statSensorState(accessory, sensor);
                 }
-                this.statLightState(accessory, light, null);
-              }
-            });
-          } else {
-            this.log.info('No lights found, ignore if expected, or check configuration with security system provider');
-          }
+              });
+            } else {
+              this.log.info(
+                'No sensors found, ignore if expected, or check configuration with security system provider'
+              );
+            }
 
-          if (system.locks) {
-            system.locks.forEach((lock) => {
-              const accessory = this.accessories.find(
-                (accessory) => accessory.context.accID === lock.id
-              ) as PlatformAccessory<LockContext>;
-              if (!this.ignoredDevices.includes(lock.id)) {
-                if (!accessory) {
-                  return this.addLock(lock);
+            if (system.lights) {
+              system.lights.forEach((light) => {
+                const accessory = this.accessories.find(
+                  (accessory) => accessory.context.accID === light.id
+                ) as PlatformAccessory<LightContext>;
+                if (!this.ignoredDevices.includes(light.id)) {
+                  if (!accessory) {
+                    return this.addLight(light);
+                  }
+                  this.statLightState(accessory, light, null);
                 }
-                this.statLockState(accessory, lock);
-              }
-            });
-          } else {
-            this.log.info('No locks found, ignore if expected, or check configuration with security system provider');
-          }
+              });
+            } else {
+              this.log.info(
+                'No lights found, ignore if expected, or check configuration with security system provider'
+              );
+            }
 
-          if (system.garages) {
-            system.garages.forEach((garage) => {
-              const accessory = this.accessories.find(
-                (accessory) => accessory.context.accID === garage.id
-              ) as PlatformAccessory<GarageContext>;
-              if (!this.ignoredDevices.includes(garage.id)) {
-                if (!accessory) {
-                  return this.addGarage(garage);
+            if (system.locks) {
+              system.locks.forEach((lock) => {
+                const accessory = this.accessories.find(
+                  (accessory) => accessory.context.accID === lock.id
+                ) as PlatformAccessory<LockContext>;
+                if (!this.ignoredDevices.includes(lock.id)) {
+                  if (!accessory) {
+                    return this.addLock(lock);
+                  }
+                  this.statLockState(accessory, lock);
                 }
-                this.statGarageState(accessory, garage);
-              }
-            });
-          } else {
-            this.log.info(
-              'No garage doors found, ignore if expected, or check configuration with security system provider'
-            );
-          }
+              });
+            } else {
+              this.log.info('No locks found, ignore if expected, or check configuration with security system provider');
+            }
 
-          if (system.thermostats) {
-            system.thermostats.forEach((thermostat) => {
-              const accessory = this.accessories.find(
-                (accessory) => accessory.context.accID === thermostat.id
-              ) as PlatformAccessory<ThermostatContext>;
-              if (!this.ignoredDevices.includes(thermostat.id)) {
-                if (!accessory) {
-                  return this.addThermostat(thermostat);
+            if (system.garages) {
+              system.garages.forEach((garage) => {
+                const accessory = this.accessories.find(
+                  (accessory) => accessory.context.accID === garage.id
+                ) as PlatformAccessory<GarageContext>;
+                if (!this.ignoredDevices.includes(garage.id)) {
+                  if (!accessory) {
+                    return this.addGarage(garage);
+                  }
+                  this.statGarageState(accessory, garage);
                 }
-                this.statThermostatState(accessory, thermostat);
-              }
-            });
-          } else {
-            this.log.info(
-              'No thermostats found, ignore if expected, or check configuration with security system provider'
-            );
-          }
+              });
+            } else {
+              this.log.info(
+                'No garage doors found, ignore if expected, or check configuration with security system provider'
+              );
+            }
+
+            if (system.thermostats) {
+              system.thermostats.forEach((thermostat) => {
+                const accessory = this.accessories.find(
+                  (accessory) => accessory.context.accID === thermostat.id
+                ) as PlatformAccessory<ThermostatContext>;
+                if (!this.ignoredDevices.includes(thermostat.id)) {
+                  if (!accessory) {
+                    return this.addThermostat(thermostat);
+                  }
+                  this.statThermostatState(accessory, thermostat);
+                }
+              });
+            } else {
+              this.log.info(
+                'No thermostats found, ignore if expected, or check configuration with security system provider'
+              );
+            }
+          });
+        })
+        .catch((err) => {
+          this.log.error(`refreshDevices Error: ${err.message}`);
+          this.log.info('Refreshing session authentication.');
+          this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
         });
-      })
-      .catch((err) => {
-        this.log.error(`refreshDevices Error: ${err.message}`);
-        this.log.info('Refreshing session authentication.');
-        this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
-      });
+    } finally {
+      this.isRefreshing = false;
+    }
   }
 
   // Partition Methods /////////////////////////////////////////////////////////
@@ -538,7 +555,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param {Object} partition  Passed in partition object from Alarm.com
    */
-  addPartition(partition): void {
+  addPartition(partition: PartitionState): void {
     const id = partition.id;
     let accessory = this.accessories.find(
       (accessory) => accessory.context.accID === id
@@ -617,7 +634,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param accessory  The accessory representing the alarm panel.
    * @param partition  The alarm panel parameters from Alarm.com.
    */
-  statPartitionState(accessory: PlatformAccessory<PartitionContext>, partition): void {
+  statPartitionState(accessory: PlatformAccessory<PartitionContext>, partition: PartitionState): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const state = getPartitionState(partition.attributes.state);
@@ -778,7 +795,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param accessory  The accessory representing a sensor
    */
-  setupSensor(accessory: PlatformAccessory): void {
+  setupSensor(accessory: PlatformAccessory<SensorContext>): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const model = accessory.context.sensorType;
@@ -1595,7 +1612,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     accessory.context.desiredState = value;
 
-    let newState;
+    let newState: THERMOSTAT_STATES;
     switch (value) {
       case hapCharacteristic.CurrentHeatingCoolingState.HEAT:
         newState = THERMOSTAT_STATES.HEATING;

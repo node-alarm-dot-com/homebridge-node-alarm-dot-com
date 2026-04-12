@@ -49,31 +49,25 @@ export interface PartitionContext extends BaseContext {
 }
 
 export interface LockContext extends BaseContext {
-  accID: string;
-  name: string;
   state: CharacteristicValue;
   desiredState: CharacteristicValue;
   lockType: string;
 }
 
 export interface GarageContext extends BaseContext {
-  accID: string;
-  name: string;
   state: CharacteristicValue;
   desiredState: CharacteristicValue;
   garageType: string;
 }
 
 export interface ThermostatContext extends BaseContext {
-  accID: string,
-  name: string,
-  state: CharacteristicValue,
-  desiredState: CharacteristicValue,
-  currentTemperature: CharacteristicValue,
-  targetTemperature: CharacteristicValue,
-  thermostatType: string,
-  supportsHumidity: boolean,
-  humidityLevel: CharacteristicValue,
+  state: CharacteristicValue;
+  desiredState: CharacteristicValue;
+  currentTemperature: CharacteristicValue;
+  targetTemperature: CharacteristicValue;
+  thermostatType: string;
+  supportsHumidity: boolean;
+  humidityLevel: CharacteristicValue;
 }
 
 // Region: Function Casts
