@@ -93,7 +93,6 @@
         "title": "Ignored Devices",
         "description": "IDs for Alarm.com accessories you wish to hide in Homekit.",
         "type": "array",
-        "maxItems": 0,
         "items": {
           "title": "Ignored Device",
           "type": "string",

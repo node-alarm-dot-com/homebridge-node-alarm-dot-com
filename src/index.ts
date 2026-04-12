@@ -218,8 +218,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     this.listDevices()
       .then((res) => {
-        this.log.debug('Registering system:');
-        this.log.debug(JSON.stringify(res));
+        this.log.debug(
+          `Registering system: ${res.partitions?.length ?? 0} partitions, ${res.sensors?.length ?? 0} sensors, ` +
+            `${res.lights?.length ?? 0} lights, ${res.locks?.length ?? 0} locks, ` +
+            `${res.garages?.length ?? 0} garages`
+        );
 
         for (const device in res) {
           if (device === 'partitions' && typeof res[device][0] === 'undefined') {
@@ -1745,7 +1748,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
             payloadLogPath + payloadLogName,
             payload,
             {
-              flag: 'w+'
+              flag: 'w+',
+              mode: 0o600
             },
             (err) => {
               if (err) {
