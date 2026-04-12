@@ -112,6 +112,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private useMFA: boolean;
   private mfaToken?: string;
   private tempDisplayUnitSetting: number;
+  private hasAccountSettings: boolean;
 
   /**
    * The platform class constructor used when registering a plugin.
@@ -129,6 +130,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.useMFA = this.config.useMFA ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : null;
     this.tempDisplayUnitSetting = hapCharacteristic.TemperatureDisplayUnits.CELSIUS;
+    this.hasAccountSettings = false;
 
     this.config.authTimeoutMinutes = this.config.authTimeoutMinutes ?? AUTH_TIMEOUT_MINS;
     this.config.pollTimeoutSeconds = this.config.pollTimeoutSeconds ?? POLL_TIMEOUT_SECS;
@@ -268,7 +270,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         }
       })
       .catch((err) => {
-        this.log.error(`Error: ${err.stack}`);
+        this.log.error(`Error: ${err instanceof Error ? err.stack : err}`);
       });
 
     // Start a timer to periodically refresh status
@@ -380,6 +382,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * This method makes a call to alarm.com in order to retrieve global account information.
    */
   async getAccountSettings() {
+    if (this.hasAccountSettings) {
+      return;
+    }
+
     try {
       const authOpts = await this.loginSession();
       const identities = await getIdentitiesState(authOpts.cookie, authOpts.ajaxKey);
@@ -388,6 +394,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.tempDisplayUnitSetting = identity.attributes.localizeTempUnitsToCelsius
           ? hapCharacteristic.TemperatureDisplayUnits.CELSIUS
           : hapCharacteristic.TemperatureDisplayUnits.FAHRENHEIT;
+        this.hasAccountSettings = true;
       }
     } catch (e) {
       this.log.error(
@@ -717,7 +724,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       .then((partition) => this.statPartitionState(accessory, partition))
       .then(() => callback()) // need to determine why we need this
       .catch((err) => {
-        this.log.error(`Error: Failed to change partition state: ${err.stack}`);
+        this.log.error(`Error: Failed to change partition state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
@@ -996,7 +1003,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.statLightState(accessory, light, callback);
       })
       .catch((err) => {
-        this.log.error(`Error: Failed to change light state: ${err.stack}`);
+        this.log.error(`Error: Failed to change light state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
@@ -1041,7 +1048,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.statLightState(accessory, light, callback);
       })
       .catch((err) => {
-        this.log.error(`Error: Failed to change light state: ${err.stack}`);
+        this.log.error(`Error: Failed to change light state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
@@ -1216,7 +1223,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       })
       .then(() => callback())
       .catch((err) => {
-        this.log.error(`Error: Failed to change lock state: ${err.stack}`);
+        this.log.error(`Error: Failed to change lock state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
@@ -1380,7 +1387,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       })
       .then(() => callback())
       .catch((err) => {
-        this.log.error(`Error: Failed to change garage state: ${err.stack}`);
+        this.log.error(`Error: Failed to change garage state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
@@ -1616,7 +1623,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       })
       .then(() => callback())
       .catch((err) => {
-        this.log.error(`Error: Failed to change thermostat state: ${err.stack}`);
+        this.log.error(`Error: Failed to change thermostat state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
@@ -1661,7 +1668,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       })
       .then(() => callback())
       .catch((err) => {
-        this.log.error(`Error: Failed to change thermostat state: ${err.stack}`);
+        this.log.error(`Error: Failed to change thermostat state: ${err instanceof Error ? err.stack : err}`);
         this.refreshDevices();
         callback(err);
       });
