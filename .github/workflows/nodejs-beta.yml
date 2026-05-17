@@ -40,5 +40,3 @@ jobs:
       - run: node .github/workflows/prerelease.js
       - run: npm --no-git-tag-version version pre --preid=beta
       - run: npm publish --tag=beta
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
