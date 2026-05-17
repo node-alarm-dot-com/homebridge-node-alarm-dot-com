@@ -34,11 +34,14 @@ jobs:
     if: github.repository == 'node-alarm-dot-com/homebridge-node-alarm-dot-com' && github.event_name == 'release'
     needs: build # only run if build succeeds
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22 # use the minimum required version
+          node-version: 24 # Node 24+ needed for ODIC support
           registry-url: https://registry.npmjs.org/
       - run: npm ci
-      - run: npm publish
+      - run: NODE_AUTH_TOKEN="" npm publish
