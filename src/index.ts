@@ -68,6 +68,7 @@ import {
   SensorContext,
   ThermostatContext
 } from './_models/Contexts';
+import { ArmingModes, PluginPlatformConfig } from './_models/PluginPlatformConfig';
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
 
@@ -102,12 +103,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * Used to keep track of restored, cached accessories
    * @private
    */
-  private readonly accessories: PlatformAccessory[] = [];
-  private readonly accessoriesToUpdate: PlatformAccessory[] = [];
+  private readonly accessories: PlatformAccessory<BaseContext>[] = [];
+  private readonly accessoriesToUpdate: PlatformAccessory<BaseContext>[] = [];
   private authOpts: AuthOpts;
-  private config: PlatformConfig;
+  private config: PluginPlatformConfig;
   private logLevel: CustomLogLevel;
-  private armingModes: Record<string, Record<string, boolean>>;
+  private armingModes: ArmingModes;
   private ignoredDevices: string[];
   private useMFA: boolean;
   private mfaToken?: string;
@@ -163,10 +164,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
     // Overwrite default arming modes with config settings.
     if (this.config.armingModes !== undefined) {
       for (const key in this.config.armingModes) {
-        this.armingModes[key].nightArming = Boolean(this.config.armingModes[key].nightArming);
-        this.armingModes[key].noEntryDelay = Boolean(this.config.armingModes[key].noEntryDelay);
-        this.armingModes[key].silentArming = Boolean(this.config.armingModes[key].silentArming);
-        this.armingModes[key].forceBypass = Boolean(this.config.armingModes[key].forceBypass);
+        const mode = key as keyof ArmingModes;
+        this.armingModes[mode].nightArming = Boolean(this.config.armingModes[key].nightArming);
+        this.armingModes[mode].noEntryDelay = Boolean(this.config.armingModes[key].noEntryDelay);
+        this.armingModes[mode].silentArming = Boolean(this.config.armingModes[key].silentArming);
+        this.armingModes[mode].forceBypass = Boolean(this.config.armingModes[key].forceBypass);
       }
     }
 
@@ -303,10 +305,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param {object} accessory  The accessory in question.
    */
-  configureAccessory(accessory: PlatformAccessory) {
+  configureAccessory(accessory: PlatformAccessory<BaseContext>) {
     // Don't restore sensor if it's pre-1.8.1 as it needs upgrading.
-    if (accessory.context.sensorType) {
-      if (!accessory.context.type) {
+    // We use element access for the next two lines since we are explicitly
+    // checking for properties which to not exist on the current types.
+    if (accessory.context['sensorType']) {
+      if (!accessory.context['type']) {
         this.log.debug(`Refusing to restore ${accessory.displayName} from cache`);
         this.accessoriesToUpdate.push(accessory);
         return;
@@ -788,7 +792,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param accessory  The accessory representing a sensor
    */
-  setupSensor(accessory: PlatformAccessory): void {
+  setupSensor(accessory: PlatformAccessory<SensorContext>): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const model = accessory.context.sensorType;
@@ -1708,7 +1712,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param accessory  The accessory to be removed from the platform.
    */
-  removeAccessory(accessory?: PlatformAccessory): void {
+  removeAccessory(accessory?: PlatformAccessory<BaseContext>): void {
     if (!accessory) {
       return;
     }
