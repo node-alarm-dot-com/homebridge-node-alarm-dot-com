@@ -41,6 +41,7 @@ import {
   login,
   openGarage,
   PartitionActionOptions,
+  PartitionState,
   SensorState,
   SensorType,
   setLightOff,
@@ -72,8 +73,6 @@ import { ArmingModes, PluginPlatformConfig } from './_models/PluginPlatformConfi
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-let hap: HAP;
 const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
 const PLUGIN_NAME = 'Alarmdotcom';
 const MANUFACTURER = 'Alarm.com';
@@ -87,7 +86,6 @@ let hapCharacteristic: HAP['Characteristic'];
 let uuidGen: typeof import('hap-nodejs/dist/lib/util/uuid');
 
 export = (api: API): void => {
-  hap = api.hap;
   platformAccessory = api.platformAccessory;
   hapService = api.hap.Service;
   hapCharacteristic = api.hap.Characteristic;
@@ -107,12 +105,16 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private readonly accessoriesToUpdate: PlatformAccessory<BaseContext>[] = [];
   private authOpts: AuthOpts;
   private config: PluginPlatformConfig;
+  private username: string;
+  private password: string;
   private logLevel: CustomLogLevel;
   private armingModes: ArmingModes;
   private ignoredDevices: string[];
   private useMFA: boolean;
   private mfaToken?: string;
   private tempDisplayUnitSetting: number;
+  private authTimeoutMinutes: number;
+  private pollTimeoutSeconds: number;
   private timerHandle: NodeJS.Timeout | undefined;
 
   /**
@@ -125,15 +127,17 @@ class ADCPlatform implements DynamicPlatformPlugin {
   constructor(log: Logger, config: PlatformConfig, api: API) {
     this.api = api;
     this.config = config ?? { platform: PLUGIN_NAME };
+    this.username = this.config.username ?? '';
+    this.password = this.config.password ?? '';
     this.logLevel = this.config.logLevel ?? LOG_LEVEL;
     this.log = new CustomLogger(log, this.logLevel);
     this.ignoredDevices = this.config.ignoredDevices ?? [];
     this.useMFA = this.config.useMFA ?? false;
-    this.mfaToken = this.config.useMFA ? this.config.mfaCookie : null;
+    this.mfaToken = this.config.useMFA ? this.config.mfaCookie : undefined;
     this.tempDisplayUnitSetting = hapCharacteristic.TemperatureDisplayUnits.CELSIUS;
 
-    this.config.authTimeoutMinutes = this.config.authTimeoutMinutes ?? AUTH_TIMEOUT_MINS;
-    this.config.pollTimeoutSeconds = this.config.pollTimeoutSeconds ?? POLL_TIMEOUT_SECS;
+    this.authTimeoutMinutes = this.config.authTimeoutMinutes ?? AUTH_TIMEOUT_MINS;
+    this.pollTimeoutSeconds = this.config.pollTimeoutSeconds ?? POLL_TIMEOUT_SECS;
 
     this.authOpts = {
       expires: +new Date() - 1
@@ -164,11 +168,16 @@ class ADCPlatform implements DynamicPlatformPlugin {
     // Overwrite default arming modes with config settings.
     if (this.config.armingModes !== undefined) {
       for (const key in this.config.armingModes) {
+        // This code should match the armingMode keys in the config file.
+        // We case using keyof to let TypeScript know these will match.
         const mode = key as keyof ArmingModes;
-        this.armingModes[mode].nightArming = Boolean(this.config.armingModes[key].nightArming);
-        this.armingModes[mode].noEntryDelay = Boolean(this.config.armingModes[key].noEntryDelay);
-        this.armingModes[mode].silentArming = Boolean(this.config.armingModes[key].silentArming);
-        this.armingModes[mode].forceBypass = Boolean(this.config.armingModes[key].forceBypass);
+        const modeOptions = this.config.armingModes[mode];
+        if (modeOptions) {
+          this.armingModes[mode].nightArming = Boolean(modeOptions.nightArming);
+          this.armingModes[mode].noEntryDelay = Boolean(modeOptions.noEntryDelay);
+          this.armingModes[mode].silentArming = Boolean(modeOptions.silentArming);
+          this.armingModes[mode].forceBypass = Boolean(modeOptions.forceBypass);
+        }
       }
     }
 
@@ -179,11 +188,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
     } else {
       this.api = api;
 
-      if (!this.config.username) {
+      if (!this.username) {
         this.log.error(MANUFACTURER + ': Missing required username in config');
         return;
       }
-      if (!this.config.password) {
+      if (!this.password) {
         this.log.error(MANUFACTURER + ': Missing required password in config');
         return;
       }
@@ -226,13 +235,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.log.debug(JSON.stringify(res));
 
         for (const device in res) {
-          if (device === 'partitions' && typeof res[device][0] === 'undefined') {
+          // Cast device as we know the device will be keys for SimplifiedSystemState.
+          const key = device as keyof SimplifiedSystemState;
+          if (device === 'partitions' && typeof res[key][0] === 'undefined') {
             // Debug log if no partition. This can happen when someone doesn't have monitoring.
             this.log.debug(`Received no partitions from Alarm.com.`);
-          } else if (res[device].length > 0) {
-            this.log.info(`Received ${res[device].length} ${device} from Alarm.com`);
+          } else if (res[key].length > 0) {
+            this.log.info(`Received ${res[key].length} ${device} from Alarm.com`);
 
-            res[device].forEach((d: DeviceState) => {
+            res[key].forEach((d: DeviceState) => {
               const deviceType = d.type;
               const realDeviceType = deviceType.split('/')[1];
               // Check so we don't add accessories which were already restored
@@ -242,7 +253,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
                 const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
                 if (!existingAccessory) {
                   if (realDeviceType === 'partition') {
-                    this.addPartition(d);
+                    this.addPartition(d as PartitionState);
                   } else if (realDeviceType === 'sensor') {
                     this.addSensor(d as SensorState);
                   } else if (realDeviceType === 'light') {
@@ -292,7 +303,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    */
   timerLoop(): NodeJS.Timeout {
     // Create a randomized delay by adding between 0 - 30 seconds to timer
-    const timerDelay = this.config.pollTimeoutSeconds * 1000 + 30000 * Math.random();
+    const timerDelay = this.pollTimeoutSeconds * 1000 + 30000 * Math.random();
     return setTimeout(() => {
       this.refreshDevices();
       this.timerLoop();
@@ -305,14 +316,14 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param {object} accessory  The accessory in question.
    */
-  configureAccessory(accessory: PlatformAccessory<BaseContext>) {
+  configureAccessory(accessory: PlatformAccessory) {
     // Don't restore sensor if it's pre-1.8.1 as it needs upgrading.
     // We use element access for the next two lines since we are explicitly
     // checking for properties which to not exist on the current types.
     if (accessory.context['sensorType']) {
       if (!accessory.context['type']) {
         this.log.debug(`Refusing to restore ${accessory.displayName} from cache`);
-        this.accessoriesToUpdate.push(accessory);
+        this.accessoriesToUpdate.push(accessory as PlatformAccessory<BaseContext>);
         return;
       }
     }
@@ -330,11 +341,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
     } else if (isThermostat(accessory)) {
       this.setupThermostat(accessory);
     } else {
-      this.log.warn(`Unrecognized accessory ${accessory.context.accID} loaded from cache`);
+      this.log.warn(`Unrecognized accessory ${accessory.context['accID']} loaded from cache`);
     }
 
-    this.accessories.push(accessory);
-    this.log.info(`Loaded from cache: ${accessory.context.name} (${accessory.context.accID})`);
+    this.accessories.push(accessory as PlatformAccessory<BaseContext>);
+    this.log.info(`Loaded from cache: ${accessory.context['name']} (${accessory.context['accID']})`);
   }
 
   // Internal Methods //////////////////////////////////////////////////////////
@@ -345,19 +356,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
   async loginSession(): Promise<AuthOpts> {
     const now = +new Date();
     if (now > this.authOpts.expires) {
-      this.log.debug(`Logging into Alarm.com as ${this.config.username}`);
-      //const authOpts = await login(this.config.username, this.config.password, this.mfaToken);
-      await login(this.config.username, this.config.password, this.useMFA ? this.mfaToken : null)
+      this.log.debug(`Logging into Alarm.com as ${this.username}`);
+      await login(this.username, this.password, this.useMFA ? this.mfaToken : undefined)
         .then((authOpts) => {
           // Cache login response and estimated expiration time
-          authOpts.expires = +new Date() + 1000 * 60 * this.config.authTimeoutMinutes;
+          authOpts.expires = +new Date() + 1000 * 60 * this.authTimeoutMinutes;
           this.authOpts = authOpts;
-          this.log.debug(`Logged into Alarm.com as ${this.config.username}`);
+          this.log.debug(`Logged into Alarm.com as ${this.username}`);
         })
         .catch((err) => {
           this.log.error(`loginSession Error: ${err.message}`);
           this.log.info('Refreshing session authentication.');
-          this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
+          this.authOpts.expires = +new Date() - 1000 * 60 * this.authTimeoutMinutes; // set to the past to trigger refresh
         });
     }
     return this.authOpts;
@@ -380,12 +390,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
         return out;
       },
       {
-        partitions: [],
-        sensors: [],
-        lights: [],
-        locks: [],
-        garages: [],
-        thermostats: []
+        partitions: [] as PartitionState[],
+        sensors: [] as SensorState[],
+        lights: [] as LightState[],
+        locks: [] as LockState[],
+        garages: [] as GarageState[],
+        thermostats: [] as ThermostatState[]
       }
     );
   }
@@ -477,7 +487,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
                 if (!accessory) {
                   return this.addLight(light);
                 }
-                this.statLightState(accessory, light, null);
+                this.statLightState(accessory, light);
               }
             });
           } else {
@@ -540,7 +550,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       .catch((err) => {
         this.log.error(`refreshDevices Error: ${err.message}`);
         this.log.info('Refreshing session authentication.');
-        this.authOpts.expires = +new Date() - 1000 * 60 * this.config.authTimeoutMinutes; // set to the past to trigger refresh
+        this.authOpts.expires = +new Date() - 1000 * 60 * this.authTimeoutMinutes; // set to the past to trigger refresh
       });
   }
 
@@ -552,7 +562,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
    *
    * @param {Object} partition  Passed in partition object from Alarm.com
    */
-  addPartition(partition): void {
+  addPartition(partition: PartitionState): void {
     const id = partition.id;
     let accessory = this.accessories.find(
       (accessory) => accessory.context.accID === id
@@ -568,9 +578,9 @@ class ADCPlatform implements DynamicPlatformPlugin {
     accessory.context = {
       accID: id,
       name: name,
-      state: null,
-      desiredState: null,
-      statusFault: null,
+      state: SYSTEM_STATES.UNKNOWN,
+      desiredState: SYSTEM_STATES.UNKNOWN,
+      statusFault: false,
       partitionType: 'default'
     };
 
@@ -595,9 +605,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const name = accessory.context.name;
     const model = 'Security Panel';
 
+    const informationService = accessory.getService(hapService.AccessoryInformation);
+
+    if (informationService === undefined) {
+      this.log.error(`Trouble getting HomeKit accessory information for ${accessory.context.accID}`);
+      return;
+    }
+
     // Setup HomeKit accessory information
-    accessory
-      .getService(hapService.AccessoryInformation)
+    informationService
       .setCharacteristic(hapCharacteristic.Manufacturer, MANUFACTURER)
       .setCharacteristic(hapCharacteristic.Model, model)
       .setCharacteristic(hapCharacteristic.SerialNumber, id);
@@ -608,6 +624,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
     });
 
     const service = accessory.getService(hapService.SecuritySystem);
+
+    if (service === undefined) {
+      this.log.error(`Trouble getting service for partition with id ${id}`);
+      return;
+    }
 
     service
       .getCharacteristic(hapCharacteristic.SecuritySystemCurrentState)
@@ -631,21 +652,25 @@ class ADCPlatform implements DynamicPlatformPlugin {
    * @param accessory  The accessory representing the alarm panel.
    * @param partition  The alarm panel parameters from Alarm.com.
    */
-  statPartitionState(accessory: PlatformAccessory<PartitionContext>, partition): void {
+  statPartitionState(accessory: PlatformAccessory<PartitionContext>, partition: PartitionState): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
     const state = getPartitionState(partition.attributes.state);
     const desiredState = getPartitionState(partition.attributes.desiredState);
     const statusFault = Boolean(partition.attributes.needsClearIssuesPrompt);
 
+    const service = accessory.getService(hapService.SecuritySystem);
+
+    if (service === undefined) {
+      this.log.error(`Error getting service for partition with id ${id}`);
+      return;
+    }
+
     if (state !== accessory.context.state) {
       this.log.debug(`Updating partition ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
 
       accessory.context.state = state;
-      accessory
-        .getService(hapService.SecuritySystem)
-        .getCharacteristic(hapCharacteristic.SecuritySystemCurrentState)
-        .updateValue(state);
+      service.getCharacteristic(hapCharacteristic.SecuritySystemCurrentState).updateValue(state);
     }
 
     if (desiredState !== accessory.context.desiredState) {
@@ -654,10 +679,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       );
 
       accessory.context.desiredState = desiredState;
-      accessory
-        .getService(hapService.SecuritySystem)
-        .getCharacteristic(hapCharacteristic.SecuritySystemTargetState)
-        .updateValue(desiredState);
+      service.getCharacteristic(hapCharacteristic.SecuritySystemTargetState).updateValue(desiredState);
     }
 
     if (statusFault !== accessory.context.statusFault) {
@@ -666,10 +688,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       );
 
       accessory.context.statusFault = statusFault;
-      accessory
-        .getService(hapService.SecuritySystem)
-        .getCharacteristic(hapCharacteristic.StatusFault)
-        .updateValue(statusFault);
+      service.getCharacteristic(hapCharacteristic.StatusFault).updateValue(statusFault);
     }
   }
 
@@ -769,7 +788,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     accessory.context = {
       accID: id,
       name: name,
-      state: null,
+      state: SENSOR_STATES.UNKNOWN,
       batteryLow: false,
       sensorType: model,
       type: sensor.attributes.deviceType
@@ -801,9 +820,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
       throw new Error(`Unrecognized sensor ${accessory.context.accID}`);
     }
 
+    const informationService = accessory.getService(hapService.AccessoryInformation);
+
+    if (informationService === undefined) {
+      this.log.error(`Trouble getting HomeKit accessory information for ${accessory.context.accID}`);
+      return;
+    }
+
     // Setup HomeKit accessory information
-    accessory
-      .getService(hapService.AccessoryInformation)
+    informationService
       .setCharacteristic(hapCharacteristic.Manufacturer, MANUFACTURER)
       .setCharacteristic(hapCharacteristic.Model, model)
       .setCharacteristic(hapCharacteristic.SerialNumber, id);
@@ -814,6 +839,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
     });
 
     const service = accessory.getService(type);
+
+    if (service === undefined) {
+      this.log.error(`Trouble getting service ${type} for device with id ${id}`);
+      return;
+    }
 
     service
       .getCharacteristic(characteristic)
@@ -837,18 +867,25 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const batteryLow = Boolean(sensor.attributes.lowBattery || sensor.attributes.criticalBattery);
     const [type, characteristic, model] = getSensorType(sensor);
 
+    const service = accessory.getService(type);
+
+    if (service === undefined) {
+      this.log.error(`Error getting service for ${type} device with id ${id}`);
+      return;
+    }
+
     if (state !== accessory.context.state) {
       this.log.info(`Updating sensor ${name} (${model}) (${id}), state=${state}, prev=${accessory.context.state}`);
 
       accessory.context.state = state;
-      accessory.getService(type).getCharacteristic(characteristic).updateValue(state);
+      service.getCharacteristic(characteristic).updateValue(state);
     }
 
     if (batteryLow !== accessory.context.batteryLow) {
       this.log.info(`Updating sensor ${name} (${id}), batteryLow=${batteryLow}, prev=${accessory.context.batteryLow}`);
 
       accessory.context.batteryLow = batteryLow;
-      accessory.getService(type).getCharacteristic(hapCharacteristic.StatusLowBattery).updateValue(batteryLow);
+      service.getCharacteristic(hapCharacteristic.StatusLowBattery).updateValue(batteryLow);
     }
   }
 
@@ -899,7 +936,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.setupLight(accessory);
 
       // Set the initial light state
-      this.statLightState(accessory, light, null);
+      this.statLightState(accessory, light);
     }
   }
 
@@ -914,9 +951,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const model = accessory.context.lightType;
     const type = hapService.Lightbulb;
 
+    const informationService = accessory.getService(hapService.AccessoryInformation);
+
+    if (informationService === undefined) {
+      this.log.error(`Trouble getting HomeKit accessory information for ${id}`);
+      return;
+    }
+
     // Setup HomeKit accessory information
-    accessory
-      .getService(hapService.AccessoryInformation)
+    informationService
       .setCharacteristic(hapCharacteristic.Manufacturer, MANUFACTURER)
       .setCharacteristic(hapCharacteristic.Model, model)
       .setCharacteristic(hapCharacteristic.SerialNumber, id);
@@ -928,13 +971,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     const service = accessory.getService(type);
 
+    if (service === undefined) {
+      this.log.error(`Error getting lightbulb information for device with id ${id}`);
+      return;
+    }
+
     service
       .getCharacteristic(hapCharacteristic.On)
       .on('get', (callback: CharacteristicGetCallback) => {
         callback(null, accessory.context.state);
       })
-      .on('set', (desiredState: boolean, callback: CharacteristicSetCallback) => {
-        this.changeLight(accessory, desiredState, callback);
+      .on('set', (desiredState: CharacteristicValue, callback: CharacteristicSetCallback) => {
+        this.changeLight(accessory, desiredState as boolean, callback);
       });
 
     if (accessory.context.isDimmer) {
@@ -943,8 +991,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
         .on('get', (callback: CharacteristicGetCallback) => {
           callback(null, accessory.context.lightLevel);
         })
-        .on('set', (brightness: number, callback: CharacteristicSetCallback) => {
-          this.changeLightBrightness(accessory, brightness, callback);
+        .on('set', (brightness: CharacteristicValue, callback: CharacteristicSetCallback) => {
+          this.changeLightBrightness(accessory, brightness as number, callback);
         });
     }
   }
@@ -965,21 +1013,27 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const name = accessory.context.name;
     const newState = getLightState(light.attributes.state);
     const newBrightness = light.attributes.lightLevel;
+    const service = accessory.getService(hapService.Lightbulb);
+
+    if (service === undefined) {
+      this.log.error(`Unable to get service information for lightbulb with id ${id}`);
+      return;
+    }
 
     if (newState !== accessory.context.state) {
       this.log.info(`Updating light ${name} (${id}), state=${newState}, prev=${accessory.context.state}`);
 
       accessory.context.state = newState;
 
-      accessory.getService(hapService.Lightbulb).updateCharacteristic(hapCharacteristic.On, newState);
+      service.updateCharacteristic(hapCharacteristic.On, newState);
     }
 
     if (accessory.context.isDimmer && newBrightness !== accessory.context.lightLevel) {
       accessory.context.lightLevel = newBrightness;
-      accessory.getService(hapService.Lightbulb).updateCharacteristic(hapCharacteristic.Brightness, newBrightness);
+      service.updateCharacteristic(hapCharacteristic.Brightness, newBrightness);
     }
 
-    if (callback !== null) {
+    if (callback !== undefined && callback !== null) {
       callback();
     }
   }
@@ -1029,7 +1083,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     callback: CharacteristicSetCallback
   ): Promise<void> {
     // Alarm.com expects a single call for both brightness and 'on'
-    // We need to ignore the extra call when changing brightness from homekit.
+    // We need to ignore the extra call when changing brightness from HomeKit.
     if (desiredState === accessory.context.state) {
       callback();
       return;
@@ -1288,13 +1342,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
       // Characteristic.ObstructionDetected
     ];
 
-    if (!characteristic && this.config.logLevel > 1) {
+    if (!characteristic && this.logLevel > 1) {
       throw new Error(`Unrecognized garage door opener ${accessory.context.accID}`);
     }
 
+    const service = accessory.getService(type);
+
+    if (service === undefined) {
+      throw new Error(`Trouble getting HomeKit accessory information for ${accessory.context.accID}`);
+    }
+
     // Setup HomeKit accessory information
-    accessory
-      .getService(hapService.AccessoryInformation)
+    service
       .setCharacteristic(hapCharacteristic.Manufacturer, MANUFACTURER)
       .setCharacteristic(hapCharacteristic.Model, model)
       .setCharacteristic(hapCharacteristic.SerialNumber, id);
@@ -1304,12 +1363,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     accessory.on('identify', () => {
       this.log.debug(`${name} identify requested`);
     });
-
-    const service = accessory.getService(type);
-
-    if (service === undefined) {
-      throw new Error(`Trouble getting HomeKit accessory information for ${accessory.context.accID}`);
-    }
 
     service.getCharacteristic(hapCharacteristic.CurrentDoorState).on('get', (callback: CharacteristicGetCallback) => {
       callback(null, accessory.context.state);
@@ -1328,24 +1381,24 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const name = accessory.context.name;
     const state = getGarageState(garage.attributes.state);
     const desiredState = getGarageState(garage.attributes.desiredState);
+    const garageService = accessory.getService(hapService.GarageDoorOpener);
+
+    if (garageService === undefined) {
+      this.log.error(`Garage door service was undefined when attempting to stat device with ID ${id}`);
+      return;
+    }
 
     if (state !== accessory.context.state) {
       this.log.info(`Updating garage ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
 
       accessory.context.state = state;
 
-      accessory
-        .getService(hapService.GarageDoorOpener)
-        .getCharacteristic(hapCharacteristic.CurrentDoorState)
-        .updateValue(state);
+      garageService.getCharacteristic(hapCharacteristic.CurrentDoorState).updateValue(state);
     }
 
     if (desiredState !== accessory.context.desiredState) {
       accessory.context.desiredState = desiredState;
-      accessory
-        .getService(hapService.GarageDoorOpener)
-        .getCharacteristic(hapCharacteristic.TargetDoorState)
-        .updateValue(desiredState);
+      garageService.getCharacteristic(hapCharacteristic.TargetDoorState).updateValue(desiredState);
     }
   }
 
@@ -1434,7 +1487,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       currentTemperature: currentTemperature,
       targetTemperature: getThermostatTargetTemperature(thermostat, shouldConvertToC),
       supportsHumidity: thermostat.attributes.supportsHumidity,
-      humidityLevel: thermostat.attributes.humidityLevel
+      humidityLevel: thermostat.attributes.humidityLevel ?? 0
     };
 
     // if the thermostat id is not in the ignore list in the homebridge config
@@ -1462,13 +1515,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
       hapCharacteristic.CurrentRelativeHumidity
     ];
 
-    if (!characteristic && this.config.logLevel > 1) {
+    if (!characteristic && this.logLevel > 1) {
       throw new Error(`Unrecognized thermostat ${accessory.context.accID}`);
     }
 
+    const service = accessory.getService(type);
+
+    if (service === undefined) {
+      throw new Error(`Trouble getting HomeKit accessory information for ${accessory.context.accID}`);
+    }
+
     // Setup HomeKit accessory information
-    accessory
-      .getService(hapService.AccessoryInformation)
+    service
       .setCharacteristic(hapCharacteristic.Manufacturer, MANUFACTURER)
       .setCharacteristic(hapCharacteristic.Model, model)
       .setCharacteristic(hapCharacteristic.SerialNumber, id);
@@ -1478,12 +1536,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     accessory.on('identify', () => {
       this.log.info(`${name} identify requested`);
     });
-
-    const service = accessory.getService(type);
-
-    if (service === undefined) {
-      throw new Error(`Trouble getting HomeKit accessory information for ${accessory.context.accID}`);
-    }
 
     service
       .getCharacteristic(hapCharacteristic.CurrentHeatingCoolingState)
@@ -1505,8 +1557,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
     service
       .getCharacteristic(hapCharacteristic.TargetTemperature)
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.targetTemperature))
-      .on('set', (value: number, callback: CharacteristicSetCallback) =>
-        this.changeThermostatTargetTemperature(accessory, value, callback)
+      .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) =>
+        this.changeThermostatTargetTemperature(accessory, value as number, callback)
       );
 
     if (accessory.context.supportsHumidity) {
@@ -1528,6 +1580,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const targetState = getThermostatState(thermostat.attributes.desiredState);
     const humidityLevel = thermostat.attributes.humidityLevel;
 
+    const thermostatService = accessory.getService(hapService.Thermostat);
+
+    if (thermostatService === undefined) {
+      this.log.error(`Thermostat service was undefined when attempting to stat thermostat state for device id ${id}`);
+      return;
+    }
+
     if (currentTemperature !== accessory.context.currentTemperature) {
       this.log.info(
         `Updating thermostat ${name} (${id}), ambientTemp=${currentTemperature}, prev=${accessory.context.currentTemperature}`
@@ -1535,10 +1594,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       accessory.context.currentTemperature = currentTemperature;
 
-      accessory
-        .getService(hapService.Thermostat)
-        .getCharacteristic(hapCharacteristic.CurrentTemperature)
-        .updateValue(currentTemperature);
+      thermostatService.getCharacteristic(hapCharacteristic.CurrentTemperature).updateValue(currentTemperature);
     }
 
     if (targetTemperature && targetTemperature !== accessory.context.targetTemperature) {
@@ -1548,10 +1604,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       accessory.context.targetTemperature = targetTemperature;
 
-      accessory
-        .getService(hapService.Thermostat)
-        .getCharacteristic(hapCharacteristic.TargetTemperature)
-        .updateValue(targetTemperature);
+      thermostatService.getCharacteristic(hapCharacteristic.TargetTemperature).updateValue(targetTemperature);
     }
 
     if (currentState !== accessory.context.state) {
@@ -1559,10 +1612,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       accessory.context.state = currentState;
 
-      accessory
-        .getService(hapService.Thermostat)
-        .getCharacteristic(hapCharacteristic.CurrentHeatingCoolingState)
-        .updateValue(currentState);
+      thermostatService.getCharacteristic(hapCharacteristic.CurrentHeatingCoolingState).updateValue(currentState);
     }
 
     if (targetState !== accessory.context.desiredState) {
@@ -1572,21 +1622,19 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       accessory.context.desiredState = targetState;
 
-      accessory
-        .getService(hapService.Thermostat)
-        .getCharacteristic(hapCharacteristic.TargetHeatingCoolingState)
-        .updateValue(targetState);
+      thermostatService.getCharacteristic(hapCharacteristic.TargetHeatingCoolingState).updateValue(targetState);
     }
 
-    if (accessory.context.supportsHumidity && humidityLevel !== accessory.context.humidityLevel) {
+    if (
+      accessory.context.supportsHumidity &&
+      humidityLevel !== undefined &&
+      humidityLevel !== accessory.context.humidityLevel
+    ) {
       this.log.info(`Updating thermostat ${name} (${id}), humidity=${humidityLevel}, prev=${accessory.context.state}`);
 
       accessory.context.humidityLevel = humidityLevel;
 
-      accessory
-        .getService(hapService.Thermostat)
-        .getCharacteristic(hapCharacteristic.CurrentRelativeHumidity)
-        .updateValue(humidityLevel);
+      thermostatService.getCharacteristic(hapCharacteristic.CurrentRelativeHumidity).updateValue(humidityLevel);
     }
   }
 
@@ -1609,7 +1657,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     accessory.context.desiredState = value;
 
-    let newState;
+    let newState: THERMOSTAT_STATES;
     switch (value) {
       case hapCharacteristic.CurrentHeatingCoolingState.HEAT:
         newState = THERMOSTAT_STATES.HEATING;
@@ -1937,7 +1985,7 @@ function getThermostatState(state: number): CharacteristicValue {
 }
 
 function getThermostatTargetTemperature(thermostat: ThermostatState, convertToC: boolean): number {
-  let value;
+  let value: number;
 
   switch (thermostat.attributes.desiredState) {
     case THERMOSTAT_STATES.HEATING:
@@ -1953,6 +2001,8 @@ function getThermostatTargetTemperature(thermostat: ThermostatState, convertToC:
         case THERMOSTAT_STATES.HEATING:
           value = thermostat.attributes.desiredHeatSetpoint;
           break;
+        case THERMOSTAT_STATES.OFF:
+        case THERMOSTAT_STATES.AUTO:
         case THERMOSTAT_STATES.COOLING:
           value = thermostat.attributes.desiredCoolSetpoint;
           break;
@@ -2019,7 +2069,7 @@ function getSensorType(sensor: SensorState): Array<any> {
 }
 
 /**
- * Maps an Alarm.com sensor model to its type represented in homebridge/homekit.
+ * Maps an Alarm.com sensor model to its type represented in homebridge/HomeKit.
  *
  * @param model  The model as reported by Alarm.com.
  * @returns {array}  An array with homebridge service and characteristic types.

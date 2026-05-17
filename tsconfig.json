@@ -17,7 +17,7 @@
       "ES2021",
       "ES2022",
     ],
-    "strict": false,
+    "strict": true,
     "allowUnusedLabels": false,
     "allowUnreachableCode": false,
     // "exactOptionalPropertyTypes": true,
@@ -25,12 +25,11 @@
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,
-    // "noUncheckedIndexedAccess": true,
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
-    // "isolatedModules": true,
-    // "esModuleInterop": true,
-    // "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   }
 }
