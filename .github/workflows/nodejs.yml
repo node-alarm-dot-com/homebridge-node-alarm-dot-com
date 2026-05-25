@@ -1,13 +1,73 @@
-name: Node-CI
+name: Release
+
+# Adopted from homebridge-config-ui-x on 05/24/2026
+# This workflow handles latest and beta releases:
+# - Latest: Triggered by GitHub releases (tag vX.Y.Z)
+# - Beta: Triggered by pushes to beta-X.Y.Z branches
 
 on:
-  push:
-    branches: [master]
-  pull_request:
   release:
-    types: [released]
+    types: [released] # release created
+  push:
+    branches:
+      - beta-*.*.* # beta release branch
+  workflow_dispatch: # Manual trigger
+
+permissions:
+  id-token: write
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  determine-release-type:
+    name: Determine Release Type
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'node-alarm-dot-com/homebridge-node-alarm-dot-com' }}
+    outputs:
+      release_type: ${{ steps.release-type.outputs.type }}
+      npm_tag: ${{ steps.release-type.outputs.tag }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Determine release type
+        id: release-type
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "type=latest" >> $GITHUB_OUTPUT
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/heads/beta-* ]]; then
+            echo "type=beta" >> $GITHUB_OUTPUT
+            echo "tag=beta" >> $GITHUB_OUTPUT
+          else
+            echo "type=none" >> $GITHUB_OUTPUT
+            echo "tag=none" >> $GITHUB_OUTPUT
+            echo "No valid release type detected - skipping publish"
+          fi
+
+      - name: Get Release Tag (Latest Only)
+        if: steps.release-type.outputs.type == 'latest'
+        id: get_version
+        uses: jannemattila/get-version-from-tag@v3
+
+      - name: Tag Info (Latest Only)
+        if: steps.release-type.outputs.type == 'latest'
+        run: |
+          echo "Release Tag: ${{github.ref}}"
+          echo "Latest Tag: ${{ steps.get_version.outputs.version }}"
+
+      - name: Tag Info Matches (Latest Only)
+        if: steps.release-type.outputs.type == 'latest' && endsWith(github.ref, steps.get_version.outputs.version)
+        run: |
+          echo Latest Tag matches Release tag
+
+      - name: Tag Info Doesn't Match (Latest Only)
+        if: steps.release-type.outputs.type == 'latest' && !endsWith(github.ref, steps.get_version.outputs.version)
+        run: |
+          echo Latest Tag does not matches Release tag
+          exit 1
+
   build:
     strategy:
       matrix:
@@ -24,24 +84,54 @@ jobs:
         run: |
           npm ci
           npm run build
-          # We don't have tests (yet?)
+          # We don't have tests
           # npm test
         env:
           CI: true
 
   publish-npm:
-    # publish only if we are on our own repo
-    if: github.repository == 'node-alarm-dot-com/homebridge-node-alarm-dot-com' && github.event_name == 'release'
-    needs: build # only run if build succeeds
+    needs: [determine-release-type, build] # only run if build succeeds
+    if: |
+      always() &&
+      needs.determine-release-type.outputs.release_type != 'none' &&
+      (needs.build.result == 'success')
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
+    name: Publish to npm (${{ needs.determine-release-type.outputs.npm_tag }})
+    outputs:
+      npm_version: ${{ steps.get-published-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
-          node-version: 24 # Node 24+ needed for ODIC support
+          node-version: 24 # use the minimum required version
           registry-url: https://registry.npmjs.org/
-      - run: npm ci
-      - run: NODE_AUTH_TOKEN="" npm publish
+
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Handle prerelease versioning
+        if: needs.determine-release-type.outputs.release_type == 'beta'
+        run: |
+          # Run versioning script to set base version
+          node .github/workflows/npm-version-script-esm.js ${{ github.ref }} ${{ needs.determine-release-type.outputs.release_type }}
+
+          # Add prerelease suffix
+          npm version pre --preid=${{ needs.determine-release-type.outputs.release_type }} --no-git-tag-version
+
+      - name: Build
+        run: npm run build
+
+      - run: NODE_AUTH_TOKEN="" npm publish --tag ${{ needs.determine-release-type.outputs.npm_tag }} --provenance --access public
+
+      - name: Get published version
+        id: get-published-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Published version: $VERSION"
