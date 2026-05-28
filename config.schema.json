@@ -62,6 +62,11 @@
           {"title": "4 - Verbose", "enum": [4]}
         ]
       },
+      "shouldUseWebSockets": {
+        "title": "<b>EXPERIMENTAL: Use WebSockets instead of polling</b>",
+        "type": "boolean",
+        "description": "EXPERIMENTAL: Instead of periodically checking for updates to your system, we can attempt to use WebSockets for near-instantaneous updates."
+      },
       "authTimeoutMinutes": {
         "title": "<b>Timeout to Re-Authenticate Session</b>",
         "type": "integer",
@@ -75,23 +80,26 @@
         "description": "(<u>WARNING:</u> choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com.)"
       },
       "armingModes": {
-        "title": "<b>Alarm.com arming modes</b>.<p>Not all panels are compatible with silent arming. Enabling this without proper support will break thatt arming type.",
+        "title": "<b>Alarm.com arming modes</b>.<p>Not all panels are compatible with silent arming. Enabling this without proper support will break that arming type.",
         "type": "object",
         "properties": {
           "away": {
-            "$ref": "#/definitions/arming_obj", "extendRefs": true
+            "$ref": "#/definitions/arming_obj",
+            "extendRefs": true
           },
           "night": {
-            "$ref": "#/definitions/arming_obj", "extendRefs": true
+            "$ref": "#/definitions/arming_obj",
+            "extendRefs": true
           },
           "stay": {
-            "$ref": "#/definitions/arming_obj", "extendRefs": true
+            "$ref": "#/definitions/arming_obj",
+            "extendRefs": true
           }
         }
       },
       "ignoredDevices": {
         "title": "Ignored Devices",
-        "description": "IDs for Alarm.com accessories you wish to hide in Homekit.",
+        "description": "IDs for Alarm.com accessories you wish to hide in HomeKit.",
         "type": "array",
         "maxItems": 0,
         "items": {

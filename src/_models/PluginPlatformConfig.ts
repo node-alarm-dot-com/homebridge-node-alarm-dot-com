@@ -17,6 +17,7 @@ export type PluginPlatformConfig = PlatformConfig & {
   logLevel?: 0 | 1 | 2 | 3 | 4;
   ignoredDevices?: string[];
   useMFA?: boolean;
+  shouldUseWebSockets?: boolean;
   mfaCookie?: string;
   authTimeoutMinutes?: number;
   pollTimeoutSeconds?: number;

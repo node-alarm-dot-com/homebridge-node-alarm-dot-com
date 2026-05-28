@@ -6,15 +6,29 @@ import {
   AuthOpts,
   DeviceState,
   FlattenedSystemState,
+  GARAGE_EVENT_TYPES,
   GarageState,
   getCurrentState,
+  getGarages,
   getIdentitiesState,
+  getLights,
+  getPartitions,
+  getSensors,
+  getThermostats,
+  getWebSocketToken,
+  LIGHT_EVENT_TYPES,
   LightState,
+  LOCK_EVENT_TYPES,
   LockState,
   login,
+  PARTITION_EVENT_TYPES,
   PartitionState,
+  SENSOR_EVENT_TYPES,
   SensorState,
-  ThermostatState
+  THERMOSTAT_EVENT_TYPES,
+  ThermostatState,
+  WebSocketEvent,
+  WebSocketEventTypes
 } from 'node-alarm-dot-com';
 
 import path from 'path';
@@ -54,6 +68,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private password: string;
   private readonly logLevel: CustomLogLevel;
   private useMFA: boolean;
+  private shouldUseWebSockets: boolean;
   private mfaToken?: string;
   tempDisplayUnitSetting: number;
   armingModes: ArmingModes;
@@ -61,6 +76,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private authTimeoutMinutes: number;
   private pollTimeoutSeconds: number;
   private timerHandle: NodeJS.Timeout | undefined;
+  private wsClient: WebSocket | undefined;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -78,6 +94,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.log = new CustomLogger(log, this.logLevel);
     this.ignoredDevices = this.config.ignoredDevices ?? [];
     this.useMFA = this.config.useMFA ?? false;
+    this.shouldUseWebSockets = this.config.shouldUseWebSockets ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : undefined;
     this.tempDisplayUnitSetting = api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS;
 
@@ -217,7 +234,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.log.error(`Error: ${err.stack}`);
       });
 
-    this.timerHandle = this.timerLoop();
+    if (this.shouldUseWebSockets) {
+      this.setupWebSocket();
+    } else {
+      this.timerHandle = this.timerLoop();
+    }
   }
 
   cleanup(): void {
@@ -225,6 +246,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
     if (this.timerHandle) {
       clearTimeout(this.timerHandle);
       this.timerHandle = undefined;
+    }
+    if (this.wsClient) {
+      this.wsClient.close();
+      this.wsClient = undefined;
     }
   }
 
@@ -234,6 +259,106 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.refreshDevices();
       this.timerLoop();
     }, timerDelay);
+  }
+
+  private async setupWebSocket(): Promise<void> {
+    try {
+      const authOpts = await this.loginSession();
+      const tokenResponse = await getWebSocketToken(authOpts);
+      const wsUrl = `${tokenResponse.endpoint}?auth=${tokenResponse.value}`;
+
+      this.log.info('Connecting to Alarm.com WebSocket...');
+      this.wsClient = new WebSocket(wsUrl);
+
+      this.wsClient.onmessage = (event) => {
+        try {
+          const wsEvent: WebSocketEvent = JSON.parse(event.data as string);
+          this.log.debug(`WebSocket event received: ${JSON.stringify(wsEvent)}`);
+          this.refreshDeviceFromWebSocket(wsEvent, authOpts);
+        } catch (err) {
+          this.log.error(`Failed to parse WebSocket message: ${err}`);
+        }
+      };
+
+      this.wsClient.onclose = () => {
+        this.log.info('WebSocket connection closed, reconnecting in 5s...');
+        setTimeout(() => this.setupWebSocket(), 5000);
+      };
+
+      this.wsClient.onerror = (err) => {
+        this.log.error(`WebSocket error: ${JSON.stringify(err)}`);
+      };
+
+      this.log.info('WebSocket connection established.');
+    } catch (err) {
+      this.log.error(`WebSocket setup failed: ${err}`);
+      this.log.info('Retrying WebSocket connection in 30s...');
+      setTimeout(() => this.setupWebSocket(), 30000);
+    }
+  }
+
+  private async refreshDeviceFromWebSocket(event: WebSocketEvent, authOpts: AuthOpts): Promise<void> {
+    try {
+      const deviceId = String(`${event.UnitId}-${event.DeviceId}`);
+      const matchesId = (id: string) => id === deviceId || id.endsWith('/' + deviceId);
+
+      const accessory = this.accessories.find((a) => matchesId(a.context.accID));
+      if (!accessory) {
+        this.log.warn(`WebSocket: no device matched DeviceId ${event.DeviceId}, falling back to full refresh`);
+        await this.refreshDevices();
+        return;
+      }
+
+      const EventType: WebSocketEventTypes = event.EventType;
+
+      if (isLock(accessory)) {
+        if (LOCK_EVENT_TYPES.has(EventType)) {
+          this.lockHandler.statFromWebSocket(accessory, EventType === WebSocketEventTypes.DoorLocked);
+        } else {
+          this.log.debug(`WebSocket: unknown lock event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else if (isSensor(accessory)) {
+        if (SENSOR_EVENT_TYPES.has(EventType)) {
+          const [sensor] = await getSensors([accessory.context.accID], authOpts);
+          if (sensor) this.sensorHandler.refresh(sensor);
+        } else {
+          this.log.debug(`WebSocket: unknown sensor event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else if (isPartition(accessory)) {
+        if (PARTITION_EVENT_TYPES.has(EventType)) {
+          const [partition] = await getPartitions([accessory.context.accID], authOpts);
+          if (partition) this.partitionHandler.refresh(partition);
+        } else {
+          this.log.debug(`WebSocket: unknown partition event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else if (isLight(accessory)) {
+        if (LIGHT_EVENT_TYPES.has(EventType)) {
+          const [light] = await getLights([accessory.context.accID], authOpts);
+          if (light) this.lightHandler.refresh(light);
+        } else {
+          this.log.debug(`WebSocket: unknown light event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else if (isGarage(accessory)) {
+        if (GARAGE_EVENT_TYPES.has(EventType)) {
+          const [garage] = await getGarages([accessory.context.accID], authOpts);
+          if (garage) this.garageHandler.refresh(garage);
+        } else {
+          this.log.debug(`WebSocket: unknown garage event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else if (isThermostat(accessory)) {
+        if (THERMOSTAT_EVENT_TYPES.has(EventType)) {
+          const [thermostat] = await getThermostats([accessory.context.accID], authOpts);
+          if (thermostat) this.thermostatHandler.refresh(thermostat);
+        } else {
+          this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else {
+        this.log.info(`Received a WS event for an unknown device type. Ignoring`);
+        this.log.debug(`Unknown WS event:`, event);
+      }
+    } catch (err) {
+      this.log.error(`refreshDevice error: ${err}`);
+    }
   }
 
   configureAccessory(accessory: PlatformAccessory) {

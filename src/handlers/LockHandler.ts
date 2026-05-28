@@ -155,6 +155,41 @@ export class LockHandler {
       });
   }
 
+  /**
+   * This function is used to update a locks state from a WebSocket event
+   * @param accessory The Lock to update.
+   * @param isLocked Whether the lock is locked.
+   */
+  statFromWebSocket(accessory: PlatformAccessory<LockContext>, isLocked: boolean): void {
+    const { api, log } = this.ctx;
+    const hap = api.hap;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+
+    const state = isLocked
+      ? hap.Characteristic.LockCurrentState.SECURED
+      : hap.Characteristic.LockCurrentState.UNSECURED;
+    const desiredState = isLocked
+      ? hap.Characteristic.LockTargetState.SECURED
+      : hap.Characteristic.LockTargetState.UNSECURED;
+
+    const service = accessory.getService(hap.Service.LockMechanism);
+    if (service === undefined) {
+      throw new Error(`Trouble getting service for lock ${id}`);
+    }
+
+    if (state !== accessory.context.state) {
+      log.info(`Updating lock ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+      accessory.context.state = state;
+      service.getCharacteristic(hap.Characteristic.LockCurrentState).updateValue(state);
+    }
+
+    if (desiredState !== accessory.context.desiredState) {
+      accessory.context.desiredState = desiredState;
+      service.getCharacteristic(hap.Characteristic.LockTargetState).updateValue(desiredState);
+    }
+  }
+
   refresh(lock: LockState): void {
     const { accessories, ignoredDevices } = this.ctx;
     const accessory = accessories.find((a) => a.context.accID === lock.id) as
