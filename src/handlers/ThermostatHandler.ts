@@ -9,7 +9,9 @@ import {
   setThermostatState,
   setThermostatTargetCoolTemperature,
   setThermostatTargetHeatTemperature,
-  ThermostatState
+  ThermostatState,
+  WebSocketEvent,
+  WebSocketEventTypes
 } from 'node-alarm-dot-com';
 import { THERMOSTAT_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { ThermostatContext } from '../_models/Contexts';
@@ -262,6 +264,47 @@ export class ThermostatHandler {
         this.ctx.refreshDevices();
         callback(err);
       });
+  }
+
+  statFromWebSocket(accessory: PlatformAccessory<ThermostatContext>, event: WebSocketEvent): boolean {
+    const { api, log } = this.ctx;
+    const hap = api.hap;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+    const shouldConvertToC = this.ctx.tempDisplayUnitSetting === hap.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+
+    const service = accessory.getService(hap.Service.Thermostat);
+    if (!service) return false;
+
+    switch (event.EventType as WebSocketEventTypes) {
+      case WebSocketEventTypes.ThermostatModeChanged: {
+        // WS EventValues (0=OFF, 1=HEAT, 2=COOL, 3=AUTO) map directly to HomeKit characteristic values
+        const state = event.EventValue;
+        if (state !== accessory.context.state) {
+          log.info(`Updating thermostat ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+          accessory.context.state = state;
+          service.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(state);
+        }
+        if (state !== accessory.context.desiredState) {
+          accessory.context.desiredState = state;
+          service.getCharacteristic(hap.Characteristic.TargetHeatingCoolingState).updateValue(state);
+        }
+        return true;
+      }
+      case WebSocketEventTypes.ThermostatSetPointChanged: {
+        const temp = shouldConvertToC ? convertFtoC(event.EventValue) : event.EventValue;
+        if (temp !== accessory.context.targetTemperature) {
+          log.info(
+            `Updating thermostat ${name} (${id}), targetTemp=${temp}, prev=${accessory.context.targetTemperature}`
+          );
+          accessory.context.targetTemperature = temp;
+          service.getCharacteristic(hap.Characteristic.TargetTemperature).updateValue(temp);
+        }
+        return true;
+      }
+      default:
+        return false;
+    }
   }
 
   refresh(thermostat: ThermostatState): void {

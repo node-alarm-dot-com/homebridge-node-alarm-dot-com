@@ -357,10 +357,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
         }
       } else if (isThermostat(accessory)) {
         if (THERMOSTAT_EVENT_TYPES.has(EventType)) {
-          const [thermostat] = await getThermostats([accessory.context.accID], authOpts);
-          if (thermostat) this.thermostatHandler.refresh(thermostat);
+          const handled = this.thermostatHandler.statFromWebSocket(accessory, event);
+          if (!handled) {
+            const [thermostat] = await getThermostats([accessory.context.accID], authOpts);
+            if (thermostat) this.thermostatHandler.refresh(thermostat);
+          }
         } else {
-          this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
+          this.log.debug(`WebSocket: ignoring thermostat event type ${EventType} for ${accessory.context.name}`);
         }
       } else {
         this.log.info(`Received a WS event for an unknown device type. Ignoring`);
