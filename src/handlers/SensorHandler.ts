@@ -3,9 +3,10 @@ import {
   CharacteristicValue,
   HAP,
   PlatformAccessory,
-  PlatformAccessoryEvent
+  PlatformAccessoryEvent,
+  Service
 } from 'homebridge';
-import { SensorState, SensorType } from 'node-alarm-dot-com';
+import { SensorState, SensorType, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { SENSOR_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { SensorContext } from '../_models/Contexts';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
@@ -117,6 +118,42 @@ export class SensorHandler {
       log.info(`Updating sensor ${name} (${id}), batteryLow=${batteryLow}, prev=${accessory.context.batteryLow}`);
       accessory.context.batteryLow = batteryLow;
       service.getCharacteristic(hap.Characteristic.StatusLowBattery).updateValue(batteryLow);
+    }
+  }
+
+  statFromWebSocket(accessory: PlatformAccessory<SensorContext>, eventType: WebSocketEventTypes): boolean {
+    const { api } = this.ctx;
+    const hap = api.hap;
+
+    const service = accessory.getService(hap.Service.ContactSensor);
+    if (!service) {
+      return false;
+    }
+
+    if (eventType === WebSocketEventTypes.OpenedClosed) {
+      this.setContactState(accessory, service, true);
+      setTimeout(() => this.setContactState(accessory, service, false), 1000);
+    } else {
+      this.setContactState(accessory, service, eventType === WebSocketEventTypes.Opened);
+    }
+
+    return true;
+  }
+
+  private setContactState(accessory: PlatformAccessory<SensorContext>, service: Service, isOpen: boolean): void {
+    const { api, log } = this.ctx;
+    const hap = api.hap;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+
+    const state = isOpen
+      ? hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
+      : hap.Characteristic.ContactSensorState.CONTACT_DETECTED;
+
+    if (state !== accessory.context.state) {
+      log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+      accessory.context.state = state;
+      service.getCharacteristic(hap.Characteristic.ContactSensorState).updateValue(state);
     }
   }
 

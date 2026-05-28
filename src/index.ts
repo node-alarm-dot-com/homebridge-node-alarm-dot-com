@@ -325,10 +325,14 @@ class ADCPlatform implements DynamicPlatformPlugin {
         }
       } else if (isSensor(accessory)) {
         if (SENSOR_EVENT_TYPES.has(EventType)) {
-          const [sensor] = await getSensors([accessory.context.accID], authOpts);
-          if (sensor) this.sensorHandler.refresh(sensor);
-        } else {
-          this.log.debug(`WebSocket: unknown sensor event type ${EventType} for ${accessory.context.name}`);
+          const handled = this.sensorHandler.statFromWebSocket(accessory, EventType);
+          if (!handled) {
+            const [sensor] = await getSensors([accessory.context.accID], authOpts);
+            if (sensor) this.sensorHandler.refresh(sensor);
+            this.log.debug(
+              `WebSocket: unable to directly stat sensor event type ${EventType}. Falling back to refresh.`
+            );
+          }
         }
       } else if (isPartition(accessory)) {
         if (PARTITION_EVENT_TYPES.has(EventType)) {
