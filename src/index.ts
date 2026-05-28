@@ -291,9 +291,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       this.log.info('WebSocket connection established.');
     } catch (err) {
-      this.log.error(`WebSocket setup failed: ${err}`);
-      this.log.info('Retrying WebSocket connection in 30s...');
-      setTimeout(() => this.setupWebSocket(), 30000);
+      if (String(err).includes('status=403')) {
+        this.log.info('WebSocket token fetch returned 403, forcing re-authentication...');
+        this.authOpts.expires = +new Date() - 1;
+        setTimeout(() => this.setupWebSocket(), 5000);
+      } else {
+        this.log.error(`WebSocket setup failed: ${err}`);
+        this.log.info('Retrying WebSocket connection in 30s...');
+        setTimeout(() => this.setupWebSocket(), 30000);
+      }
     }
   }
 
