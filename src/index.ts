@@ -309,7 +309,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       const accessory = this.accessories.find((a) => matchesId(a.context.accID));
       if (!accessory) {
         this.log.warn(`WebSocket: no device matched DeviceId ${event.DeviceId}, falling back to full refresh`);
-        await this.refreshDevices();
+        await setTimeout(() => this.refreshDevices(), POLL_TIMEOUT_SECS);
         return;
       }
 
@@ -326,7 +326,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
           const handled = this.sensorHandler.statFromWebSocket(accessory, EventType);
           if (!handled) {
             const [sensor] = await getSensors([accessory.context.accID], authOpts);
-            if (sensor) this.sensorHandler.refresh(sensor);
+            if (sensor) setTimeout(() => this.sensorHandler.refresh(sensor), POLL_TIMEOUT_SECS);
             this.log.debug(
               `WebSocket: unable to directly stat sensor event type ${EventType}. Falling back to refresh.`
             );
@@ -339,7 +339,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
           const handled = this.partitionHandler.statFromWebSocket(accessory, EventType);
           if (!handled) {
             const [partition] = await getPartitions([accessory.context.accID], authOpts);
-            if (partition) this.partitionHandler.refresh(partition);
+            if (partition) setTimeout(() => this.partitionHandler.refresh(partition), POLL_TIMEOUT_SECS);
             this.log.debug(`WebSocket: falling back to refresh for partition event ${EventType}`);
           }
         } else {
@@ -362,7 +362,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
           const handled = this.thermostatHandler.statFromWebSocket(accessory, event);
           if (!handled) {
             const [thermostat] = await getThermostats([accessory.context.accID], authOpts);
-            if (thermostat) this.thermostatHandler.refresh(thermostat);
+            if (thermostat) setTimeout(() => this.thermostatHandler.refresh(thermostat), POLL_TIMEOUT_SECS);
           }
         } else {
           this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
