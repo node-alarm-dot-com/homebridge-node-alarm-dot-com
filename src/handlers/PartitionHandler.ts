@@ -5,7 +5,14 @@ import {
   HAP,
   PlatformAccessory
 } from 'homebridge';
-import { armAway, armStay, disarm, PartitionActionOptions, PartitionState } from 'node-alarm-dot-com';
+import {
+  armAway,
+  armStay,
+  disarm,
+  PartitionActionOptions,
+  PartitionState,
+  WebSocketEventTypes
+} from 'node-alarm-dot-com';
 import { SYSTEM_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { PartitionContext } from '../_models/Contexts';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
@@ -179,6 +186,56 @@ export class PartitionHandler {
         this.ctx.refreshDevices();
         callback(err);
       });
+  }
+
+  statFromWebSocket(accessory: PlatformAccessory<PartitionContext>, eventType: WebSocketEventTypes): boolean {
+    const { api, log } = this.ctx;
+    const hap = api.hap;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+
+    const service = accessory.getService(hap.Service.SecuritySystem);
+    if (!service) return false;
+
+    let currentState: number;
+    let targetState: number;
+
+    switch (eventType) {
+      case WebSocketEventTypes.Disarmed:
+        currentState = hap.Characteristic.SecuritySystemCurrentState.DISARMED;
+        targetState = hap.Characteristic.SecuritySystemTargetState.DISARM;
+        break;
+      case WebSocketEventTypes.ArmedStay:
+        currentState = hap.Characteristic.SecuritySystemCurrentState.STAY_ARM;
+        targetState = hap.Characteristic.SecuritySystemTargetState.STAY_ARM;
+        break;
+      case WebSocketEventTypes.ArmedAway:
+        currentState = hap.Characteristic.SecuritySystemCurrentState.AWAY_ARM;
+        targetState = hap.Characteristic.SecuritySystemTargetState.AWAY_ARM;
+        break;
+      case WebSocketEventTypes.ArmedNight:
+        currentState = hap.Characteristic.SecuritySystemCurrentState.NIGHT_ARM;
+        targetState = hap.Characteristic.SecuritySystemTargetState.NIGHT_ARM;
+        break;
+      default:
+        return false;
+    }
+
+    if (currentState !== accessory.context.state) {
+      log.info(`Updating partition ${name} (${id}), state=${currentState}, prev=${accessory.context.state}`);
+      accessory.context.state = currentState;
+      service.getCharacteristic(hap.Characteristic.SecuritySystemCurrentState).updateValue(currentState);
+    }
+
+    if (targetState !== accessory.context.desiredState) {
+      log.info(
+        `Updating partition ${name} (${id}), desiredState=${targetState}, prev=${accessory.context.desiredState}`
+      );
+      accessory.context.desiredState = targetState;
+      service.getCharacteristic(hap.Characteristic.SecuritySystemTargetState).updateValue(targetState);
+    }
+
+    return true;
   }
 
   refresh(partition: PartitionState): void {

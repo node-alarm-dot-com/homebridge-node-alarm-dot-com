@@ -5,7 +5,7 @@ import {
   HAP,
   PlatformAccessory
 } from 'homebridge';
-import { closeGarage, GarageState, openGarage } from 'node-alarm-dot-com';
+import { closeGarage, GarageState, openGarage, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { GARAGE_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { GarageContext } from '../_models/Contexts';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
@@ -150,6 +150,36 @@ export class GarageHandler {
         this.ctx.refreshDevices();
         callback(err);
       });
+  }
+
+  statFromWebSocket(accessory: PlatformAccessory<GarageContext>, eventType: WebSocketEventTypes): boolean {
+    const { api, log } = this.ctx;
+    const hap = api.hap;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+
+    const service = accessory.getService(hap.Service.GarageDoorOpener);
+    if (!service) return false;
+
+    let state: number;
+    if (eventType === WebSocketEventTypes.Opened) {
+      state = hap.Characteristic.CurrentDoorState.OPEN;
+    } else {
+      state = hap.Characteristic.CurrentDoorState.CLOSED;
+    }
+
+    if (state !== accessory.context.state) {
+      log.info(`Updating garage ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+      accessory.context.state = state;
+      service.getCharacteristic(hap.Characteristic.CurrentDoorState).updateValue(state);
+    }
+
+    if (state !== accessory.context.desiredState) {
+      accessory.context.desiredState = state;
+      service.getCharacteristic(hap.Characteristic.TargetDoorState).updateValue(state);
+    }
+
+    return true;
   }
 
   refresh(garage: GarageState): void {

@@ -5,7 +5,7 @@ import {
   PlatformAccessory,
   PlatformAccessoryEvent
 } from 'homebridge';
-import { LightState, setLightOff, setLightOn } from 'node-alarm-dot-com';
+import { LightState, setLightOff, setLightOn, WebSocketEvent, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { LIGHT_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { LightContext } from '../_models/Contexts';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
@@ -180,6 +180,50 @@ export class LightHandler {
         this.ctx.refreshDevices();
         callback(err);
       });
+  }
+
+  statFromWebSocket(accessory: PlatformAccessory<LightContext>, event: WebSocketEvent): boolean {
+    const { api, log } = this.ctx;
+    const hap = api.hap;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+
+    const service = accessory.getService(hap.Service.Lightbulb);
+    if (!service) return false;
+
+    switch (event.EventType as WebSocketEventTypes) {
+      case WebSocketEventTypes.LightTurnedOn: {
+        if (accessory.context.state !== true) {
+          log.info(`Updating light ${name} (${id}), state=true, prev=${accessory.context.state}`);
+          accessory.context.state = true;
+          service.updateCharacteristic(hap.Characteristic.On, true);
+        }
+        break;
+      }
+      case WebSocketEventTypes.LightTurnedOff: {
+        if (accessory.context.state !== false) {
+          log.info(`Updating light ${name} (${id}), state=false, prev=${accessory.context.state}`);
+          accessory.context.state = false;
+          service.updateCharacteristic(hap.Characteristic.On, false);
+        }
+        break;
+      }
+      case WebSocketEventTypes.SwitchLevelChanged: {
+        const brightness = event.EventValue;
+        if (accessory.context.state !== true) {
+          accessory.context.state = true;
+          service.updateCharacteristic(hap.Characteristic.On, true);
+        }
+        if (accessory.context.isDimmer && brightness !== accessory.context.lightLevel) {
+          log.info(`Updating light ${name} (${id}), brightness=${brightness}, prev=${accessory.context.lightLevel}`);
+          accessory.context.lightLevel = brightness;
+          service.updateCharacteristic(hap.Characteristic.Brightness, brightness);
+        }
+        break;
+      }
+    }
+
+    return true;
   }
 
   refresh(light: LightState): void {

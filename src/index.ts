@@ -9,9 +9,7 @@ import {
   GARAGE_EVENT_TYPES,
   GarageState,
   getCurrentState,
-  getGarages,
   getIdentitiesState,
-  getLights,
   getPartitions,
   getSensors,
   getThermostats,
@@ -333,25 +331,29 @@ class ADCPlatform implements DynamicPlatformPlugin {
               `WebSocket: unable to directly stat sensor event type ${EventType}. Falling back to refresh.`
             );
           }
+        } else {
+          this.log.debug(`WebSocket: unknown sensor event type ${EventType} for ${accessory.context.name}`);
         }
       } else if (isPartition(accessory)) {
         if (PARTITION_EVENT_TYPES.has(EventType)) {
-          const [partition] = await getPartitions([accessory.context.accID], authOpts);
-          if (partition) this.partitionHandler.refresh(partition);
+          const handled = this.partitionHandler.statFromWebSocket(accessory, EventType);
+          if (!handled) {
+            const [partition] = await getPartitions([accessory.context.accID], authOpts);
+            if (partition) this.partitionHandler.refresh(partition);
+            this.log.debug(`WebSocket: falling back to refresh for partition event ${EventType}`);
+          }
         } else {
           this.log.debug(`WebSocket: unknown partition event type ${EventType} for ${accessory.context.name}`);
         }
       } else if (isLight(accessory)) {
         if (LIGHT_EVENT_TYPES.has(EventType)) {
-          const [light] = await getLights([accessory.context.accID], authOpts);
-          if (light) this.lightHandler.refresh(light);
+          this.lightHandler.statFromWebSocket(accessory, event);
         } else {
           this.log.debug(`WebSocket: unknown light event type ${EventType} for ${accessory.context.name}`);
         }
       } else if (isGarage(accessory)) {
         if (GARAGE_EVENT_TYPES.has(EventType)) {
-          const [garage] = await getGarages([accessory.context.accID], authOpts);
-          if (garage) this.garageHandler.refresh(garage);
+          this.garageHandler.statFromWebSocket(accessory, EventType);
         } else {
           this.log.debug(`WebSocket: unknown garage event type ${EventType} for ${accessory.context.name}`);
         }
@@ -363,7 +365,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
             if (thermostat) this.thermostatHandler.refresh(thermostat);
           }
         } else {
-          this.log.debug(`WebSocket: ignoring thermostat event type ${EventType} for ${accessory.context.name}`);
+          this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
         }
       } else {
         this.log.info(`Received a WS event for an unknown device type. Ignoring`);
