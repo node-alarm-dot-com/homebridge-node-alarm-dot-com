@@ -9,7 +9,7 @@ import { closeGarage, GarageState, openGarage, WebSocketEventTypes } from 'node-
 import { GARAGE_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { GarageContext } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
-import { HandlerContext, MANUFACTURER } from './HandlerContext';
+import { HandlerContext } from './HandlerContext';
 
 export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSocketEventTypes> {
   constructor(ctx: HandlerContext) {
@@ -17,18 +17,12 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
   }
 
   add(garage: GarageState): void {
-    const { api, log, accessories, ignoredDevices } = this.ctx;
+    const { api, log, ignoredDevices } = this.ctx;
     const hap = api.hap;
     const id = garage.id;
-    let accessory = accessories.find((a) => a.context.accID === id) as PlatformAccessory<GarageContext> | undefined;
-    if (accessory) {
-      this.ctx.removeAccessory(accessory);
-    }
-
     const model = 'Garage Door';
     const name = garage.attributes.description;
-    const uuid = hap.uuid.generate(id);
-    accessory = new api.platformAccessory(name, uuid);
+    const accessory = this.createAccessory(id, name);
 
     accessory.context = {
       accID: id,
@@ -40,7 +34,7 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
 
     if (!ignoredDevices.includes(id)) {
       log.info(
-        `Adding ${model} "${name}" (id=${id}, uuid=${uuid}) (${accessory.context.state} ${accessory.context.desiredState})`
+        `Adding ${model} "${name}" (id=${id}, uuid=${accessory.UUID}) (${accessory.context.state} ${accessory.context.desiredState})`
       );
       this.ctx.addAccessory(accessory, hap.Service.GarageDoorOpener, model);
       this.setup(accessory);
@@ -52,26 +46,19 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
-    const name = accessory.context.name;
     const model = accessory.context.garageType;
 
     if (!hap.Characteristic.CurrentDoorState && log.logLevel > 1) {
       throw new Error(`Unrecognized garage door opener ${id}`);
     }
 
+    this.setAccessoryInfo(accessory, model);
+    this.registerIdentify(accessory);
+
     const service = accessory.getService(hap.Service.GarageDoorOpener);
     if (service === undefined) {
       throw new Error(`Trouble getting HomeKit accessory information for ${id}`);
     }
-
-    service
-      .setCharacteristic(hap.Characteristic.Manufacturer, MANUFACTURER)
-      .setCharacteristic(hap.Characteristic.Model, model)
-      .setCharacteristic(hap.Characteristic.SerialNumber, id);
-
-    accessory.on('identify', () => {
-      log.debug(`${name} identify requested`);
-    });
 
     service.getCharacteristic(hap.Characteristic.CurrentDoorState).on('get', (callback: CharacteristicGetCallback) => {
       callback(null, accessory.context.state);

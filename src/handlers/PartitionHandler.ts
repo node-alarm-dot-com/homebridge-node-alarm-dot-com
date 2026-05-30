@@ -16,7 +16,7 @@ import {
 import { SYSTEM_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { PartitionContext } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
-import { HandlerContext, MANUFACTURER } from './HandlerContext';
+import { HandlerContext } from './HandlerContext';
 
 export class PartitionHandler extends BaseHandler<PartitionContext, PartitionState, WebSocketEventTypes> {
   constructor(ctx: HandlerContext) {
@@ -24,17 +24,11 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
   }
 
   add(partition: PartitionState): void {
-    const { api, log, accessories } = this.ctx;
+    const { api, log } = this.ctx;
     const hap = api.hap;
     const id = partition.id;
-    let accessory = accessories.find((a) => a.context.accID === id) as PlatformAccessory<PartitionContext>;
-    if (accessory) {
-      this.ctx.removeAccessory(accessory);
-    }
-
     const name = partition.attributes.description;
-    const uuid = hap.uuid.generate(id);
-    accessory = new api.platformAccessory(name, uuid);
+    const accessory = this.createAccessory(id, name);
 
     accessory.context = {
       accID: id,
@@ -45,7 +39,7 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
       partitionType: 'default'
     };
 
-    log.info(`Adding partition ${name} (id=${id}, uuid=${uuid})`);
+    log.info(`Adding partition ${name} (id=${id}, uuid=${accessory.UUID})`);
 
     this.ctx.addAccessory(accessory, hap.Service.SecuritySystem, 'Security Panel');
     this.setup(accessory);
@@ -56,23 +50,9 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
-    const name = accessory.context.name;
-    const model = 'Security Panel';
 
-    const informationService = accessory.getService(hap.Service.AccessoryInformation);
-    if (informationService === undefined) {
-      log.error(`Trouble getting HomeKit accessory information for ${id}`);
-      return;
-    }
-
-    informationService
-      .setCharacteristic(hap.Characteristic.Manufacturer, MANUFACTURER)
-      .setCharacteristic(hap.Characteristic.Model, model)
-      .setCharacteristic(hap.Characteristic.SerialNumber, id);
-
-    accessory.on('identify', () => {
-      log.debug(`${name} identify requested`);
-    });
+    this.setAccessoryInfo(accessory, 'Security Panel');
+    this.registerIdentify(accessory);
 
     const service = accessory.getService(hap.Service.SecuritySystem);
     if (service === undefined) {

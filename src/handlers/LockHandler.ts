@@ -3,14 +3,13 @@ import {
   CharacteristicSetCallback,
   CharacteristicValue,
   HAP,
-  PlatformAccessory,
-  PlatformAccessoryEvent
+  PlatformAccessory
 } from 'homebridge';
 import { LockState, setLockSecure, setLockUnsecure } from 'node-alarm-dot-com';
 import { LOCK_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { LockContext } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
-import { HandlerContext, MANUFACTURER } from './HandlerContext';
+import { HandlerContext } from './HandlerContext';
 
 export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
   constructor(ctx: HandlerContext) {
@@ -18,18 +17,12 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
   }
 
   add(lock: LockState): void {
-    const { api, log, accessories, ignoredDevices } = this.ctx;
+    const { api, log, ignoredDevices } = this.ctx;
     const hap = api.hap;
     const id = lock.id;
-    let accessory = accessories.find((a) => a.context.accID === id) as PlatformAccessory<LockContext> | undefined;
-    if (accessory) {
-      this.ctx.removeAccessory(accessory);
-    }
-
     const model = 'Door Lock';
     const name = lock.attributes.description;
-    const uuid = hap.uuid.generate(id);
-    accessory = new api.platformAccessory(name, uuid);
+    const accessory = this.createAccessory(id, name);
 
     accessory.context = {
       accID: id,
@@ -41,7 +34,7 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
 
     if (!ignoredDevices.includes(id)) {
       log.info(
-        `Adding ${model} "${name}" (id=${id}, uuid=${uuid}) (${accessory.context.state} ${accessory.context.desiredState})`
+        `Adding ${model} "${name}" (id=${id}, uuid=${accessory.UUID}) (${accessory.context.state} ${accessory.context.desiredState})`
       );
       this.ctx.addAccessory(accessory, hap.Service.LockMechanism, model);
       this.setup(accessory);
@@ -53,26 +46,14 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
-    const name = accessory.context.name;
     const model = accessory.context.lockType;
 
     if (!hap.Characteristic.LockCurrentState && log.logLevel > 1) {
       throw new Error(`Unrecognized lock ${id}`);
     }
 
-    const homeKitService = accessory.getService(hap.Service.AccessoryInformation);
-    if (homeKitService === undefined) {
-      throw new Error(`Trouble getting HomeKit accessory information for ${id}`);
-    }
-
-    homeKitService
-      .setCharacteristic(hap.Characteristic.Manufacturer, MANUFACTURER)
-      .setCharacteristic(hap.Characteristic.Model, model)
-      .setCharacteristic(hap.Characteristic.SerialNumber, id);
-
-    accessory.on(PlatformAccessoryEvent.IDENTIFY, () => {
-      log.debug(`${name} identify requested`);
-    });
+    this.setAccessoryInfo(accessory, model);
+    this.registerIdentify(accessory);
 
     const service = accessory.getService(hap.Service.LockMechanism);
     if (service === undefined) {

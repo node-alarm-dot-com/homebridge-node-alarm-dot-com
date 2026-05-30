@@ -1,16 +1,9 @@
-import {
-  CharacteristicGetCallback,
-  CharacteristicValue,
-  HAP,
-  PlatformAccessory,
-  PlatformAccessoryEvent,
-  Service
-} from 'homebridge';
+import { CharacteristicGetCallback, CharacteristicValue, HAP, PlatformAccessory, Service } from 'homebridge';
 import { SensorState, SensorType, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { SENSOR_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { SensorContext } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
-import { HandlerContext, MANUFACTURER } from './HandlerContext';
+import { HandlerContext } from './HandlerContext';
 
 export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSocketEventTypes> {
   constructor(ctx: HandlerContext) {
@@ -18,14 +11,9 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
   }
 
   add(sensor: SensorState): void {
-    const { api, log, accessories, ignoredDevices } = this.ctx;
+    const { api, log, ignoredDevices } = this.ctx;
     const hap = api.hap;
     const id = sensor.id;
-    let accessory = accessories.find((a) => a.context.accID === id) as PlatformAccessory<SensorContext> | undefined;
-    if (accessory) {
-      this.ctx.removeAccessory(accessory);
-    }
-
     const [type, , model] = getSensorType(sensor, hap);
     if (type === undefined) {
       log.warn(
@@ -35,8 +23,7 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
     }
 
     const name = sensor.attributes.description;
-    const uuid = hap.uuid.generate(id);
-    accessory = new api.platformAccessory(name, uuid);
+    const accessory = this.createAccessory(id, name);
 
     accessory.context = {
       accID: id,
@@ -48,7 +35,7 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
     };
 
     if (!ignoredDevices.includes(id)) {
-      log.info(`Adding ${model} "${name}" (id=${id}, uuid=${uuid})`);
+      log.info(`Adding ${model} "${name}" (id=${id}, uuid=${accessory.UUID})`);
       this.ctx.addAccessory(accessory, type, model);
       this.setup(accessory);
       this.stat(accessory, sensor);
@@ -59,27 +46,14 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
-    const name = accessory.context.name;
     const model = accessory.context.sensorType;
     const [type, characteristic] = sensorModelToType(model, hap);
     if (!characteristic && log.logLevel > 1) {
       throw new Error(`Unrecognized sensor ${id}`);
     }
 
-    const informationService = accessory.getService(hap.Service.AccessoryInformation);
-    if (informationService === undefined) {
-      log.error(`Trouble getting HomeKit accessory information for ${id}`);
-      return;
-    }
-
-    informationService
-      .setCharacteristic(hap.Characteristic.Manufacturer, MANUFACTURER)
-      .setCharacteristic(hap.Characteristic.Model, model)
-      .setCharacteristic(hap.Characteristic.SerialNumber, id);
-
-    accessory.on(PlatformAccessoryEvent.IDENTIFY, () => {
-      log.debug(`${name} identify requested`);
-    });
+    this.setAccessoryInfo(accessory, model);
+    this.registerIdentify(accessory);
 
     const service = accessory.getService(type);
     if (service === undefined) {

@@ -16,7 +16,7 @@ import {
 import { THERMOSTAT_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { ThermostatContext } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
-import { HandlerContext, MANUFACTURER } from './HandlerContext';
+import { HandlerContext } from './HandlerContext';
 
 export class ThermostatHandler extends BaseHandler<ThermostatContext, ThermostatState, WebSocketEvent> {
   constructor(ctx: HandlerContext) {
@@ -24,18 +24,12 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
   }
 
   add(thermostat: ThermostatState): void {
-    const { api, log, accessories, ignoredDevices, tempDisplayUnitSetting } = this.ctx;
+    const { api, log, ignoredDevices, tempDisplayUnitSetting } = this.ctx;
     const hap = api.hap;
     const id = thermostat.id;
-    let accessory = accessories.find((a) => a.context.accID === id) as PlatformAccessory<ThermostatContext> | undefined;
-    if (accessory) {
-      this.ctx.removeAccessory(accessory);
-    }
-
     const model = 'Thermostat';
     const name = thermostat.attributes.description;
-    const uuid = hap.uuid.generate(id);
-    accessory = new api.platformAccessory(name, uuid);
+    const accessory = this.createAccessory(id, name);
 
     const shouldConvertToC = tempDisplayUnitSetting === hap.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
     const currentTemperature = shouldConvertToC
@@ -55,7 +49,7 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
     };
 
     if (!ignoredDevices.includes(id)) {
-      log.info(`Adding ${model} "${name}" (id=${id}, uuid=${uuid}) (current temp: ${currentTemperature})`);
+      log.info(`Adding ${model} "${name}" (id=${id}, uuid=${accessory.UUID}) (current temp: ${currentTemperature})`);
       this.ctx.addAccessory(accessory, hap.Service.Thermostat, model);
       this.setup(accessory);
       this.stat(accessory, thermostat);
@@ -66,26 +60,19 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
-    const name = accessory.context.name;
     const model = accessory.context.thermostatType;
 
     if (!hap.Characteristic.TargetTemperature && log.logLevel > 1) {
       throw new Error(`Unrecognized thermostat ${id}`);
     }
 
+    this.setAccessoryInfo(accessory, model);
+    this.registerIdentify(accessory);
+
     const service = accessory.getService(hap.Service.Thermostat);
     if (service === undefined) {
       throw new Error(`Trouble getting HomeKit accessory information for ${id}`);
     }
-
-    service
-      .setCharacteristic(hap.Characteristic.Manufacturer, MANUFACTURER)
-      .setCharacteristic(hap.Characteristic.Model, model)
-      .setCharacteristic(hap.Characteristic.SerialNumber, id);
-
-    accessory.on('identify', () => {
-      log.info(`${name} identify requested`);
-    });
 
     service
       .getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState)
