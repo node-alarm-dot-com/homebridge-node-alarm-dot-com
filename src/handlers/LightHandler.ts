@@ -8,10 +8,13 @@ import {
 import { LightState, setLightOff, setLightOn, WebSocketEvent, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { LIGHT_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { LightContext } from '../_models/Contexts';
+import { BaseHandler } from './BaseHandler';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
 
-export class LightHandler {
-  constructor(private readonly ctx: HandlerContext) {}
+export class LightHandler extends BaseHandler<LightContext, LightState, WebSocketEvent> {
+  constructor(ctx: HandlerContext) {
+    super(ctx);
+  }
 
   add(light: LightState): void {
     const { api, log, accessories, ignoredDevices } = this.ctx;
@@ -224,19 +227,6 @@ export class LightHandler {
     }
 
     return true;
-  }
-
-  refresh(light: LightState): void {
-    const { accessories, ignoredDevices } = this.ctx;
-    const accessory = accessories.find((a) => a.context.accID === light.id) as
-      | PlatformAccessory<LightContext>
-      | undefined;
-    if (!ignoredDevices.includes(light.id)) {
-      if (!accessory) {
-        return this.add(light);
-      }
-      this.stat(accessory, light);
-    }
   }
 }
 

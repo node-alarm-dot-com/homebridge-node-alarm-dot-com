@@ -8,10 +8,13 @@ import {
 import { closeGarage, GarageState, openGarage, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { GARAGE_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { GarageContext } from '../_models/Contexts';
+import { BaseHandler } from './BaseHandler';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
 
-export class GarageHandler {
-  constructor(private readonly ctx: HandlerContext) {}
+export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSocketEventTypes> {
+  constructor(ctx: HandlerContext) {
+    super(ctx);
+  }
 
   add(garage: GarageState): void {
     const { api, log, accessories, ignoredDevices } = this.ctx;
@@ -180,19 +183,6 @@ export class GarageHandler {
     }
 
     return true;
-  }
-
-  refresh(garage: GarageState): void {
-    const { accessories, ignoredDevices } = this.ctx;
-    const accessory = accessories.find((a) => a.context.accID === garage.id) as
-      | PlatformAccessory<GarageContext>
-      | undefined;
-    if (!ignoredDevices.includes(garage.id)) {
-      if (!accessory) {
-        return this.add(garage);
-      }
-      this.stat(accessory, garage);
-    }
   }
 }
 

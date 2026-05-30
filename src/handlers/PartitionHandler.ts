@@ -15,10 +15,13 @@ import {
 } from 'node-alarm-dot-com';
 import { SYSTEM_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { PartitionContext } from '../_models/Contexts';
+import { BaseHandler } from './BaseHandler';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
 
-export class PartitionHandler {
-  constructor(private readonly ctx: HandlerContext) {}
+export class PartitionHandler extends BaseHandler<PartitionContext, PartitionState, WebSocketEventTypes> {
+  constructor(ctx: HandlerContext) {
+    super(ctx);
+  }
 
   add(partition: PartitionState): void {
     const { api, log, accessories } = this.ctx;
@@ -236,19 +239,6 @@ export class PartitionHandler {
     }
 
     return true;
-  }
-
-  refresh(partition: PartitionState): void {
-    const { accessories, ignoredDevices } = this.ctx;
-    const accessory = accessories.find((a) => a.context.accID === partition.id) as
-      | PlatformAccessory<PartitionContext>
-      | undefined;
-    if (!ignoredDevices.includes(partition.id)) {
-      if (!accessory) {
-        return this.add(partition);
-      }
-      this.stat(accessory, partition);
-    }
   }
 }
 

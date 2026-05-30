@@ -9,10 +9,13 @@ import {
 import { SensorState, SensorType, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { SENSOR_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { SensorContext } from '../_models/Contexts';
+import { BaseHandler } from './BaseHandler';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
 
-export class SensorHandler {
-  constructor(private readonly ctx: HandlerContext) {}
+export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSocketEventTypes> {
+  constructor(ctx: HandlerContext) {
+    super(ctx);
+  }
 
   add(sensor: SensorState): void {
     const { api, log, accessories, ignoredDevices } = this.ctx;
@@ -154,19 +157,6 @@ export class SensorHandler {
       log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
       accessory.context.state = state;
       service.getCharacteristic(hap.Characteristic.ContactSensorState).updateValue(state);
-    }
-  }
-
-  refresh(sensor: SensorState): void {
-    const { accessories, ignoredDevices } = this.ctx;
-    const accessory = accessories.find((a) => a.context.accID === sensor.id) as
-      | PlatformAccessory<SensorContext>
-      | undefined;
-    if (!ignoredDevices.includes(sensor.id)) {
-      if (!accessory) {
-        return this.add(sensor);
-      }
-      this.stat(accessory, sensor);
     }
   }
 }

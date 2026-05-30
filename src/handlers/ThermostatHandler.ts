@@ -15,10 +15,13 @@ import {
 } from 'node-alarm-dot-com';
 import { THERMOSTAT_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { ThermostatContext } from '../_models/Contexts';
+import { BaseHandler } from './BaseHandler';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
 
-export class ThermostatHandler {
-  constructor(private readonly ctx: HandlerContext) {}
+export class ThermostatHandler extends BaseHandler<ThermostatContext, ThermostatState, WebSocketEvent> {
+  constructor(ctx: HandlerContext) {
+    super(ctx);
+  }
 
   add(thermostat: ThermostatState): void {
     const { api, log, accessories, ignoredDevices, tempDisplayUnitSetting } = this.ctx;
@@ -304,19 +307,6 @@ export class ThermostatHandler {
       }
       default:
         return false;
-    }
-  }
-
-  refresh(thermostat: ThermostatState): void {
-    const { accessories, ignoredDevices } = this.ctx;
-    const accessory = accessories.find((a) => a.context.accID === thermostat.id) as
-      | PlatformAccessory<ThermostatContext>
-      | undefined;
-    if (!ignoredDevices.includes(thermostat.id)) {
-      if (!accessory) {
-        return this.add(thermostat);
-      }
-      this.stat(accessory, thermostat);
     }
   }
 }

@@ -9,10 +9,13 @@ import {
 import { LockState, setLockSecure, setLockUnsecure } from 'node-alarm-dot-com';
 import { LOCK_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { LockContext } from '../_models/Contexts';
+import { BaseHandler } from './BaseHandler';
 import { HandlerContext, MANUFACTURER } from './HandlerContext';
 
-export class LockHandler {
-  constructor(private readonly ctx: HandlerContext) {}
+export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
+  constructor(ctx: HandlerContext) {
+    super(ctx);
+  }
 
   add(lock: LockState): void {
     const { api, log, accessories, ignoredDevices } = this.ctx;
@@ -187,19 +190,6 @@ export class LockHandler {
     if (desiredState !== accessory.context.desiredState) {
       accessory.context.desiredState = desiredState;
       service.getCharacteristic(hap.Characteristic.LockTargetState).updateValue(desiredState);
-    }
-  }
-
-  refresh(lock: LockState): void {
-    const { accessories, ignoredDevices } = this.ctx;
-    const accessory = accessories.find((a) => a.context.accID === lock.id) as
-      | PlatformAccessory<LockContext>
-      | undefined;
-    if (!ignoredDevices.includes(lock.id)) {
-      if (!accessory) {
-        return this.add(lock);
-      }
-      this.stat(accessory, lock);
     }
   }
 }
