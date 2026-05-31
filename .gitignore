@@ -67,6 +67,9 @@ typings/
 .code-workspace
 *.code-workspace
 
+# Claude Settings
+.claude
+
 dist/
 P/
 .DS_Store

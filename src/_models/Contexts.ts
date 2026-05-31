@@ -5,6 +5,7 @@ import { SensorType } from 'node-alarm-dot-com';
  * This is the information that is shared amongst all devices.
  */
 export interface BaseContext {
+  [x: string]: any;
   /**
    * accID is the ID assigned from Alarm.com.
    */
@@ -65,15 +66,15 @@ export interface GarageContext extends BaseContext {
 }
 
 export interface ThermostatContext extends BaseContext {
-  accID: string,
-  name: string,
-  state: CharacteristicValue,
-  desiredState: CharacteristicValue,
-  currentTemperature: CharacteristicValue,
-  targetTemperature: CharacteristicValue,
-  thermostatType: string,
-  supportsHumidity: boolean,
-  humidityLevel: CharacteristicValue,
+  accID: string;
+  name: string;
+  state: CharacteristicValue;
+  desiredState: CharacteristicValue;
+  currentTemperature: CharacteristicValue;
+  targetTemperature: CharacteristicValue;
+  thermostatType: string;
+  supportsHumidity: boolean;
+  humidityLevel: CharacteristicValue;
 }
 
 // Region: Function Casts

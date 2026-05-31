@@ -6,9 +6,7 @@
     "declaration": true,
     "rootDir": "./src",
     "outDir": "./dist",
-    "esModuleInterop": true,
     "sourceMap": true,
-    "strict": false,
     "lib": [
       "ES2015",
       "ES2016",
@@ -19,7 +17,19 @@
       "ES2021",
       "ES2022",
     ],
+    "strict": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    // "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
     "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   }
 }
