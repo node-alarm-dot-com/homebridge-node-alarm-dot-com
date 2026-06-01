@@ -343,7 +343,7 @@ function getThermostatTargetTemperature(thermostat: ThermostatState, convertToC:
 }
 
 function convertFtoC(f: number): number {
-  return Math.round((5 / 9) * (f - 32));
+  return Math.round((((f - 32) * 5) / 9) * 2) / 2;
 }
 
 function convertCtoF(c: number): number {
