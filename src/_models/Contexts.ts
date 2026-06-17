@@ -46,6 +46,7 @@ export interface PartitionContext extends BaseContext {
   state: CharacteristicValue;
   desiredState: CharacteristicValue;
   statusFault: boolean;
+  supportsNightArming: boolean;
   partitionType: 'default';
 }
 
