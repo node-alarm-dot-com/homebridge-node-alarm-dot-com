@@ -1,6 +1,6 @@
 {
   "name": "homebridge-node-alarm-dot-com",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Alarm.com plugin for Homebridge using Node.js",
   "author": {
     "name": "Chase Christiansen",
@@ -56,10 +56,10 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.9.3",
-    "@typescript-eslint/eslint-plugin": "^8.61.1",
-    "@typescript-eslint/parser": "^8.61.1",
-    "eslint": "^10.5.0",
+    "@types/node": "^26.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.62.0",
+    "@typescript-eslint/parser": "^8.62.0",
+    "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
     "homebridge": "^2.1.0",
