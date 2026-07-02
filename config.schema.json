@@ -107,6 +107,11 @@
           "type": "string",
           "placeholder": "96922426-1 (Example)"
         }
+      },
+      "supportAnyDoorbellCamera": {
+        "title": "<b>Support Any Doorbell Camera</b>",
+        "type": "boolean",
+        "description": "When enabled, any camera where isDoorbellCamera is true will be registered as a doorbell in HomeKit, in addition to the ADC-VDB750 which is always supported."
       }
     }
   }

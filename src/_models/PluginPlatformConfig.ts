@@ -24,4 +24,5 @@ export type PluginPlatformConfig = PlatformConfig & {
   username?: string;
   password?: string;
   armingModes?: Partial<Record<keyof ArmingModes, Partial<ArmingModeOptions>>>;
+  supportAnyDoorbellCamera?: boolean;
 };

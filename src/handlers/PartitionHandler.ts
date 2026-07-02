@@ -36,7 +36,7 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
       state: SYSTEM_STATES.UNKNOWN,
       desiredState: SYSTEM_STATES.UNKNOWN,
       statusFault: false,
-      supportsNightArming: partition.attributes.extendedArmingOptions.ArmedNight.includes(3),
+      supportsNightArming: false, //partition.attributes.extendedArmingOptions.ArmedNight.includes(3),
       partitionType: 'default'
     };
 

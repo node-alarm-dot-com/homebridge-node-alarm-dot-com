@@ -4,6 +4,8 @@ import fs from 'fs';
 
 import {
   AuthOpts,
+  CAMERA_EVENT_TYPES,
+  CameraState,
   DeviceState,
   FlattenedSystemState,
   GARAGE_EVENT_TYPES,
@@ -31,7 +33,16 @@ import {
 
 import path from 'path';
 
-import { BaseContext, isGarage, isLight, isLock, isPartition, isSensor, isThermostat } from './_models/Contexts';
+import {
+  BaseContext,
+  isDoorbell,
+  isGarage,
+  isLight,
+  isLock,
+  isPartition,
+  isSensor,
+  isThermostat
+} from './_models/Contexts';
 import { ArmingModes, PluginPlatformConfig } from './_models/PluginPlatformConfig';
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
@@ -41,6 +52,7 @@ import { LightHandler } from './handlers/LightHandler';
 import { LockHandler } from './handlers/LockHandler';
 import { PartitionHandler } from './handlers/PartitionHandler';
 import { SensorHandler } from './handlers/SensorHandler';
+import { DoorbellHandler } from './handlers/DoorbellHandler';
 import { ThermostatHandler } from './handlers/ThermostatHandler';
 
 const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
@@ -82,6 +94,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private readonly lockHandler: LockHandler;
   private readonly garageHandler: GarageHandler;
   private readonly thermostatHandler: ThermostatHandler;
+  private readonly doorbellHandler: DoorbellHandler;
 
   constructor(log: Logger, config: PlatformConfig, api: API) {
     this.api = api;
@@ -143,6 +156,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.lockHandler = new LockHandler(this);
     this.garageHandler = new GarageHandler(this);
     this.thermostatHandler = new ThermostatHandler(this);
+    this.doorbellHandler = new DoorbellHandler(this);
 
     if (!api && !config) {
       return;
@@ -199,7 +213,14 @@ class ADCPlatform implements DynamicPlatformPlugin {
                 const uuid = this.api.hap.uuid.generate(d.id);
                 const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
                 if (!existingAccessory) {
-                  if (realDeviceType === 'partition') {
+                  if (key === 'cameras') {
+                    const cam = d as CameraState;
+                    const isVDB750 = cam.attributes.deviceModel === 'ADC-VDB750';
+                    const isAnyDoorbell = this.config.supportAnyDoorbellCamera && cam.attributes.isDoorbellCamera;
+                    if (isVDB750 || isAnyDoorbell) {
+                      this.doorbellHandler.add(cam);
+                    }
+                  } else if (realDeviceType === 'partition') {
                     this.partitionHandler.add(d as PartitionState);
                   } else if (realDeviceType === 'sensor') {
                     this.sensorHandler.add(d as SensorState);
@@ -367,6 +388,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
         } else {
           this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
         }
+      } else if (isDoorbell(accessory)) {
+        if (CAMERA_EVENT_TYPES.has(EventType)) {
+          this.doorbellHandler.statFromWebSocket(accessory, EventType);
+        } else {
+          this.log.debug(`WebSocket: unknown doorbell event type ${EventType} for ${accessory.context.name}`);
+        }
       } else {
         this.log.info(`Received a WS event for an unknown device type. Ignoring`);
         this.log.debug(`Unknown WS event:`, event);
@@ -397,6 +424,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.garageHandler.setup(accessory);
     } else if (isThermostat(accessory)) {
       this.thermostatHandler.setup(accessory);
+    } else if (isDoorbell(accessory)) {
+      this.doorbellHandler.setup(accessory);
     } else {
       this.log.warn(`Unrecognized accessory ${accessory.context['accID']} loaded from cache`);
     }
@@ -437,6 +466,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         out.locks = out.locks.concat(system.locks);
         out.garages = out.garages.concat(system.garages);
         out.thermostats = out.thermostats.concat(system.thermostats);
+        out.cameras = out.cameras.concat(system.cameras);
         return out;
       },
       {
@@ -445,7 +475,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
         lights: [] as LightState[],
         locks: [] as LockState[],
         garages: [] as GarageState[],
-        thermostats: [] as ThermostatState[]
+        thermostats: [] as ThermostatState[],
+        cameras: [] as CameraState[]
       }
     );
   }
@@ -521,6 +552,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
             this.log.info(
               'No thermostats found, ignore if expected, or check configuration with security system provider'
             );
+          }
+
+          if (system.cameras) {
+            system.cameras.forEach((c) => this.doorbellHandler.refresh(c as CameraState));
+          } else {
+            this.log.info('No cameras found, ignore if expected, or check configuration with security system provider');
           }
         });
       })

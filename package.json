@@ -48,10 +48,10 @@
   },
   "engines": {
     "node": ">=22.0.0",
-    "homebridge": "^1.11.0 || ^2.0.0-beta.0"
+    "homebridge": "^1.11.0 || ^2.0.0"
   },
   "dependencies": {
-    "node-alarm-dot-com": "2.4.0"
+    "node-alarm-dot-com": "../node-alarm-dot-com"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
