@@ -51,7 +51,7 @@
     "homebridge": "^1.11.0 || ^2.0.0"
   },
   "dependencies": {
-    "node-alarm-dot-com": "../node-alarm-dot-com"
+    "node-alarm-dot-com": "^2.5.0-beta"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",

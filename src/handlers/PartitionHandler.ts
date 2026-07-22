@@ -36,7 +36,7 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
       state: SYSTEM_STATES.UNKNOWN,
       desiredState: SYSTEM_STATES.UNKNOWN,
       statusFault: false,
-      supportsNightArming: false, //partition.attributes.extendedArmingOptions.ArmedNight.includes(3),
+      supportsNightArming: (partition.attributes.extendedArmingOptions?.ArmedNight ?? []).includes(3),
       partitionType: 'default'
     };
 
@@ -114,7 +114,7 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
       service.getCharacteristic(hap.Characteristic.StatusFault).updateValue(statusFault);
     }
 
-    const supportsNightArming = partition.attributes.extendedArmingOptions.ArmedNight.includes(3);
+    const supportsNightArming = (partition.attributes.extendedArmingOptions?.ArmedNight ?? []).includes(3);
     if (supportsNightArming !== (accessory.context.supportsNightArming ?? false)) {
       log.info(`Updating partition ${name} (${id}), supportsNightArming=${supportsNightArming}`);
       accessory.context.supportsNightArming = supportsNightArming;
