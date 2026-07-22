@@ -81,6 +81,7 @@ export interface ThermostatContext extends BaseContext {
 export interface DoorbellContext extends BaseContext {
   accID: string;
   name: string;
+  model: string;
   motionDetected: boolean;
   doorbellType: 'default';
 }

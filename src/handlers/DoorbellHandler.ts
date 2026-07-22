@@ -13,13 +13,14 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
     const { api, log, ignoredDevices } = this.ctx;
     const hap = api.hap;
     const id = camera.id;
-    const model = 'Video Doorbell';
+    const model = camera.attributes.deviceModel;
     const name = camera.attributes.description;
     const accessory = this.createAccessory(id, name);
 
     accessory.context = {
       accID: id,
       name: name,
+      model: model,
       motionDetected: false,
       doorbellType: 'default'
     };
@@ -36,7 +37,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
   setup(accessory: PlatformAccessory<DoorbellContext>): void {
     const { api } = this.ctx;
     const hap = api.hap;
-    const model = 'Video Doorbell';
+    const model = accessory.context.model;
 
     this.setAccessoryInfo(accessory, model);
     this.registerIdentify(accessory);
