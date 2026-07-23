@@ -35,7 +35,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
   }
 
   setup(accessory: PlatformAccessory<DoorbellContext>): void {
-    const { api } = this.ctx;
+    const { api, log } = this.ctx;
     const hap = api.hap;
     const model = accessory.context.model;
 
@@ -44,7 +44,8 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
 
     const doorbellService = accessory.getService(hap.Service.Doorbell);
     if (doorbellService === undefined) {
-      throw new Error(`Trouble getting Doorbell service for ${accessory.context.accID}`);
+      log.error(`Trouble getting Doorbell service for ${accessory.context.accID}`);
+      return;
     }
 
     doorbellService
@@ -53,7 +54,8 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
 
     const motionService = accessory.getService(hap.Service.MotionSensor);
     if (motionService === undefined) {
-      throw new Error(`Trouble getting MotionSensor service for ${accessory.context.accID}`);
+      log.error(`Trouble getting MotionSensor service for ${accessory.context.accID}`);
+      return;
     }
 
     motionService
