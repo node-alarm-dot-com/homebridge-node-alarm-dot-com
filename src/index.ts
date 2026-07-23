@@ -59,6 +59,9 @@ const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
 const PLUGIN_NAME = 'Alarmdotcom';
 const AUTH_TIMEOUT_MINS = 10;
 const POLL_TIMEOUT_SECS = 60;
+const WS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const WS_REFRESH_JITTER_MS = 15 * 1000;
+const HOURLY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const LOG_LEVEL = CustomLogLevel.NOTICE;
 
 export = (api: API): void => {
@@ -89,6 +92,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private wsClient: WebSocket | undefined;
   private isShuttingDown = false;
   private unmatchedDeviceRefreshHandle: NodeJS.Timeout | undefined;
+  private wsRefreshHandle: NodeJS.Timeout | undefined;
+  private hourlyRefreshHandle: NodeJS.Timeout | undefined;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -260,6 +265,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     } else {
       this.timerLoop();
     }
+    this.hourlyRefreshLoop();
   }
 
   cleanup(): void {
@@ -273,10 +279,26 @@ class ADCPlatform implements DynamicPlatformPlugin {
       clearTimeout(this.unmatchedDeviceRefreshHandle);
       this.unmatchedDeviceRefreshHandle = undefined;
     }
+    if (this.wsRefreshHandle) {
+      clearTimeout(this.wsRefreshHandle);
+      this.wsRefreshHandle = undefined;
+    }
+    if (this.hourlyRefreshHandle) {
+      clearTimeout(this.hourlyRefreshHandle);
+      this.hourlyRefreshHandle = undefined;
+    }
     if (this.wsClient) {
       this.wsClient.close();
       this.wsClient = undefined;
     }
+  }
+
+  hourlyRefreshLoop(): void {
+    this.hourlyRefreshHandle = setTimeout(() => {
+      this.log.debug('Performing hourly safety-net device refresh...');
+      this.refreshDevices();
+      this.hourlyRefreshLoop();
+    }, HOURLY_REFRESH_INTERVAL_MS);
   }
 
   timerLoop(): void {
@@ -295,6 +317,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
       const authOpts = await this.loginSession();
       const tokenResponse = await getWebSocketToken(authOpts);
       const wsUrl = `${tokenResponse.endpoint}?auth=${tokenResponse.value}`;
+
+      if (this.wsClient) {
+        this.wsClient.onclose = null;
+        this.wsClient.close();
+        this.wsClient = undefined;
+      }
 
       this.log.info('Connecting to Alarm.com WebSocket...');
       this.wsClient = new WebSocket(wsUrl);
@@ -323,6 +351,17 @@ class ADCPlatform implements DynamicPlatformPlugin {
       };
 
       this.log.info('WebSocket connection established.');
+
+      if (this.wsRefreshHandle) {
+        clearTimeout(this.wsRefreshHandle);
+      }
+      this.wsRefreshHandle = setTimeout(
+        () => {
+          this.log.debug('Proactively refreshing WebSocket session before it expires...');
+          this.setupWebSocket();
+        },
+        WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
+      );
     } catch (err) {
       if (this.isShuttingDown) {
         return;
