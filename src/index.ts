@@ -347,7 +347,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       };
 
       this.wsClient.onerror = (err) => {
-        this.log.error(`WebSocket error: ${JSON.stringify(err)}`);
+        this.log.error(`WebSocket error: ${err.message || err.type}`);
       };
 
       this.log.info('WebSocket connection established.');
