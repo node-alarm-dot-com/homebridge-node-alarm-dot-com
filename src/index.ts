@@ -256,7 +256,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     if (this.shouldUseWebSockets) {
       this.setupWebSocket();
     } else {
-      this.timerHandle = this.timerLoop();
+      this.timerLoop();
     }
   }
 
@@ -272,9 +272,9 @@ class ADCPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  timerLoop(): NodeJS.Timeout {
+  timerLoop(): void {
     const timerDelay = this.pollTimeoutSeconds * 1000 + 30000 * Math.random();
-    return setTimeout(() => {
+    this.timerHandle = setTimeout(() => {
       this.refreshDevices();
       this.timerLoop();
     }, timerDelay);
