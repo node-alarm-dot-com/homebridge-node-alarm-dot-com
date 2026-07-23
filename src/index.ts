@@ -87,6 +87,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private pollTimeoutSeconds: number;
   private timerHandle: NodeJS.Timeout | undefined;
   private wsClient: WebSocket | undefined;
+  private isShuttingDown = false;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -262,6 +263,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
   cleanup(): void {
     this.log.info('Cleaning up homebridge-node-alarm-dot-com');
+    this.isShuttingDown = true;
     if (this.timerHandle) {
       clearTimeout(this.timerHandle);
       this.timerHandle = undefined;
@@ -281,6 +283,9 @@ class ADCPlatform implements DynamicPlatformPlugin {
   }
 
   private async setupWebSocket(): Promise<void> {
+    if (this.isShuttingDown) {
+      return;
+    }
     try {
       const authOpts = await this.loginSession();
       const tokenResponse = await getWebSocketToken(authOpts);
@@ -300,6 +305,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
       };
 
       this.wsClient.onclose = () => {
+        if (this.isShuttingDown) {
+          this.log.info('WebSocket connection closed.');
+          return;
+        }
         this.log.info('WebSocket connection closed, reconnecting in 5s...');
         setTimeout(() => this.setupWebSocket(), 5000);
       };
@@ -310,6 +319,9 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       this.log.info('WebSocket connection established.');
     } catch (err) {
+      if (this.isShuttingDown) {
+        return;
+      }
       if (String(err).includes('status=403')) {
         this.log.info('WebSocket token fetch returned 403, forcing re-authentication...');
         this.authOpts.expires = +new Date() - 1;
