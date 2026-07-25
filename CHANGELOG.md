@@ -3,6 +3,20 @@
 All notable changes to this project are documented in this file, based on the
 [GitHub releases](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/releases).
 
+## [1.13.0]
+
+### Enhancements
+
+- Added support for doorbells appearing as motion sensors. (#144)
+- Changed default logging level to WARN, reducing log spam.
+
+### Bugs Squished
+
+- Fixed issue with C/F temp conversion when setting thermostats. (#158)
+- Fixed issue where plugin would error or crash when not receiving or sending proper extendedArmingOptions.
+- 'Night' arm no longer appears for partitions which do not support night arming. (#147)
+- Fixed a couple of issues where loops were not being cleaned up properly.
+
 ## [1.12.0] - 2026-05-31
 
 - Big refactor of the code base:
