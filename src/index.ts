@@ -33,6 +33,7 @@ import {
 
 import path from 'path';
 
+import { describeError } from 'node-alarm-dot-com/dist/_utils';
 import {
   BaseContext,
   isDoorbell,
@@ -46,13 +47,13 @@ import {
 import { ArmingModes, PluginPlatformConfig } from './_models/PluginPlatformConfig';
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
+import { DoorbellHandler } from './handlers/DoorbellHandler';
 import { GarageHandler } from './handlers/GarageHandler';
 import { MANUFACTURER } from './handlers/HandlerContext';
 import { LightHandler } from './handlers/LightHandler';
 import { LockHandler } from './handlers/LockHandler';
 import { PartitionHandler } from './handlers/PartitionHandler';
 import { SensorHandler } from './handlers/SensorHandler';
-import { DoorbellHandler } from './handlers/DoorbellHandler';
 import { ThermostatHandler } from './handlers/ThermostatHandler';
 
 const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
@@ -313,6 +314,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     if (this.isShuttingDown) {
       return;
     }
+
     try {
       const authOpts = await this.loginSession();
       const tokenResponse = await getWebSocketToken(authOpts);
@@ -347,7 +349,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
       };
 
       this.wsClient.onerror = (err) => {
-        this.log.error(`WebSocket error: ${err.message || err.type}`);
+        this.log.error(`WebSocket error: ${describeError(err)}`);
       };
 
       this.log.info('WebSocket connection established.');
@@ -358,6 +360,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.wsRefreshHandle = setTimeout(
         () => {
           this.log.debug('Proactively refreshing WebSocket session before it expires...');
+          // Purposefully expire authopts to force a token refresh.
+          this.authOpts.expires = +new Date() - 1;
           this.setupWebSocket();
         },
         WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
@@ -371,7 +375,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.authOpts.expires = +new Date() - 1;
         setTimeout(() => this.setupWebSocket(), 5000);
       } else {
-        this.log.error(`WebSocket setup failed: ${err}`);
+        this.log.error(`WebSocket setup failed: ${describeError(err)}`);
         this.log.info('Retrying WebSocket connection in 30s...');
         setTimeout(() => this.setupWebSocket(), 30000);
       }
