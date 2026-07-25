@@ -52,13 +52,13 @@
       "logLevel": {
         "title": "<b>Log Level</b>",
         "type": "integer",
-        "default": 3,
+        "default": 2,
         "required": true,
         "oneOf": [
           {"title": "0 - No log entries", "enum": [0]},
           {"title": "1 - Only errors", "enum": [1]},
-          {"title": "2 - Only warnings and errors", "enum": [2]},
-          {"title": "3 - Notices, warnings, and errors (Default)", "enum": [3]},
+          {"title": "2 - Only warnings and errors (Default)", "enum": [2]},
+          {"title": "3 - Notices, warnings, and errors", "enum": [3]},
           {"title": "4 - Verbose", "enum": [4]}
         ]
       },

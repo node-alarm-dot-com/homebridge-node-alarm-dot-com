@@ -63,7 +63,7 @@ const POLL_TIMEOUT_SECS = 60;
 const WS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const WS_REFRESH_JITTER_MS = 15 * 1000;
 const HOURLY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
-const LOG_LEVEL = CustomLogLevel.NOTICE;
+const LOG_LEVEL = CustomLogLevel.WARN;
 
 export = (api: API): void => {
   api.registerPlatform(PLUGIN_ID, PLUGIN_NAME, ADCPlatform);
