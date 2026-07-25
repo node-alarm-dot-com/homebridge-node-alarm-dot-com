@@ -222,12 +222,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
                 const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
                 if (!existingAccessory) {
                   if (key === 'cameras') {
-                    const cam = d as CameraState;
-                    const isVDB750 = cam.attributes.deviceModel === 'ADC-VDB750';
-                    const isAnyDoorbell = this.config.supportAnyDoorbellCamera && cam.attributes.isDoorbellCamera;
-                    if (isVDB750 || isAnyDoorbell) {
-                      this.doorbellHandler.add(cam);
-                    }
+                    this.doorbellHandler.add(d as CameraState);
                   } else if (realDeviceType === 'partition') {
                     this.partitionHandler.add(d as PartitionState);
                   } else if (realDeviceType === 'sensor') {
@@ -261,7 +256,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.log.error(`Error: ${err.stack}`);
       });
 
-      this.setupWebSocket();
+    this.setupWebSocket();
     this.hourlyRefreshLoop();
   }
 
