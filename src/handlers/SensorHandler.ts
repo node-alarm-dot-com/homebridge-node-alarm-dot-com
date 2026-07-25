@@ -108,14 +108,23 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
       return false;
     }
 
-    if (eventType === WebSocketEventTypes.OpenedClosed) {
-      this.setContactState(accessory, service, true);
-      setTimeout(() => this.setContactState(accessory, service, false), 1000);
-    } else {
-      this.setContactState(accessory, service, eventType === WebSocketEventTypes.Opened);
+    switch (eventType) {
+      case WebSocketEventTypes.Opened:
+      case WebSocketEventTypes.DoorLeftOpen:
+        this.setContactState(accessory, service, true);
+        return true;
+      case WebSocketEventTypes.Closed:
+      case WebSocketEventTypes.DoorLeftOpenRestoral:
+      case WebSocketEventTypes.OpenedClosed:
+        // OpenedClosed is a completed open→close cycle; final state is closed.
+        // Do not invent a timed open→close pulse — that fights real Opened events
+        // and can report a door closed while it is still open.
+        this.setContactState(accessory, service, false);
+        return true;
+      default:
+        // Tamper/Bypass/etc. are not reliable contact-state signals; fall back to REST.
+        return false;
     }
-
-    return true;
   }
 
   private setContactState(accessory: PlatformAccessory<SensorContext>, service: Service, isOpen: boolean): void {
