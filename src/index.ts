@@ -657,16 +657,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
   addAccessory(accessory: PlatformAccessory<BaseContext>, type: any, model: string): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
+
+    // Check before mutating — the previous push-then-findIndex path always hit
+    // the register branch and never the "prevent existing" warning.
+    if (this.accessories.some((existing) => existing.context.accID === id)) {
+      this.log.warn(`Preventing adding existing ${model} ${name} with id ${id}`);
+      return;
+    }
+
     this.accessories.push(accessory);
     const serviceUUID = this.api.hap.uuid.generate(id + type);
-
     accessory.addService(type, name, serviceUUID);
-
-    if (this.accessories.findIndex((accessory) => accessory.context.accID === id) > -1) {
-      this.api.registerPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
-    } else {
-      this.log.warn(`Preventing adding existing ${model} ${name} with id ${id}`);
-    }
+    this.api.registerPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
   }
 
   removeAccessory(accessory?: PlatformAccessory<BaseContext>): void {
