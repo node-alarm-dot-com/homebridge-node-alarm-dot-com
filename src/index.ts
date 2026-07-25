@@ -62,6 +62,7 @@ const AUTH_TIMEOUT_MINS = 10;
 const POLL_TIMEOUT_SECS = 60;
 const WS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const WS_REFRESH_JITTER_MS = 15 * 1000;
+const WS_MAX_CONSECUTIVE_FAILURES = 5;
 const HOURLY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const LOG_LEVEL = CustomLogLevel.WARN;
 
@@ -82,7 +83,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private password: string;
   private readonly logLevel: CustomLogLevel;
   private useMFA: boolean;
-  private shouldUseWebSockets: boolean;
   private mfaToken?: string;
   tempDisplayUnitSetting: number;
   armingModes: ArmingModes;
@@ -95,6 +95,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private unmatchedDeviceRefreshHandle: NodeJS.Timeout | undefined;
   private wsRefreshHandle: NodeJS.Timeout | undefined;
   private hourlyRefreshHandle: NodeJS.Timeout | undefined;
+  private wsConsecutiveFailures = 0;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -113,7 +114,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.log = new CustomLogger(log, this.logLevel);
     this.ignoredDevices = this.config.ignoredDevices ?? [];
     this.useMFA = this.config.useMFA ?? false;
-    this.shouldUseWebSockets = this.config.shouldUseWebSockets ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : undefined;
     this.tempDisplayUnitSetting = api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS;
 
@@ -261,11 +261,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.log.error(`Error: ${err.stack}`);
       });
 
-    if (this.shouldUseWebSockets) {
       this.setupWebSocket();
-    } else {
-      this.timerLoop();
-    }
     this.hourlyRefreshLoop();
   }
 
@@ -344,8 +340,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
           this.log.info('WebSocket connection closed.');
           return;
         }
-        this.log.info('WebSocket connection closed, reconnecting in 5s...');
-        setTimeout(() => this.setupWebSocket(), 5000);
+        this.log.info('WebSocket connection closed.');
+        this.scheduleWebSocketRetry(5000);
       };
 
       this.wsClient.onerror = (err) => {
@@ -353,6 +349,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
       };
 
       this.log.info('WebSocket connection established.');
+
+      if (this.wsConsecutiveFailures > 0) {
+        this.log.info('WebSocket connection recovered; stopping polling fallback.');
+      }
+      this.wsConsecutiveFailures = 0;
+      if (this.timerHandle) {
+        clearTimeout(this.timerHandle);
+        this.timerHandle = undefined;
+      }
 
       if (this.wsRefreshHandle) {
         clearTimeout(this.wsRefreshHandle);
@@ -373,12 +378,29 @@ class ADCPlatform implements DynamicPlatformPlugin {
       if (String(err).includes('status=403')) {
         this.log.info('WebSocket token fetch returned 403, forcing re-authentication...');
         this.authOpts.expires = +new Date() - 1;
-        setTimeout(() => this.setupWebSocket(), 5000);
+        this.scheduleWebSocketRetry(5000);
       } else {
         this.log.error(`WebSocket setup failed: ${describeError(err)}`);
-        this.log.info('Retrying WebSocket connection in 30s...');
-        setTimeout(() => this.setupWebSocket(), 30000);
+        this.scheduleWebSocketRetry(30000);
       }
+    }
+  }
+
+  private scheduleWebSocketRetry(delayMs: number): void {
+    this.wsConsecutiveFailures++;
+
+    if (this.wsConsecutiveFailures >= WS_MAX_CONSECUTIVE_FAILURES) {
+      if (!this.timerHandle) {
+        this.log.warn(
+          `WebSocket connection failed ${this.wsConsecutiveFailures} times in a row; falling back to polling every ${this.pollTimeoutSeconds}s until it recovers.`
+        );
+        this.timerLoop();
+      }
+      this.log.info(`Retrying WebSocket connection in ${WS_REFRESH_INTERVAL_MS / 1000}s...`);
+      setTimeout(() => this.setupWebSocket(), WS_REFRESH_INTERVAL_MS);
+    } else {
+      this.log.info(`Retrying WebSocket connection in ${delayMs / 1000}s...`);
+      setTimeout(() => this.setupWebSocket(), delayMs);
     }
   }
 
