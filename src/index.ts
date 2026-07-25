@@ -202,59 +202,60 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     await this.getAccountSettings();
 
-    this.listDevices()
-      .then((res) => {
-        this.log.debug('Registering system:');
-        this.log.debug(JSON.stringify(res));
+    // Register/restore accessories before opening the WebSocket so early events
+    // can match devices instead of falling back to a delayed full refresh.
+    try {
+      const res = await this.listDevices();
+      this.log.debug('Registering system:');
+      this.log.debug(JSON.stringify(res));
 
-        for (const device in res) {
-          const key = device as keyof SimplifiedSystemState;
-          if (device === 'partitions' && typeof res[key][0] === 'undefined') {
-            this.log.debug(`Received no partitions from Alarm.com.`);
-          } else if (res[key].length > 0) {
-            this.log.info(`Received ${res[key].length} ${device} from Alarm.com`);
+      for (const device in res) {
+        const key = device as keyof SimplifiedSystemState;
+        if (device === 'partitions' && typeof res[key][0] === 'undefined') {
+          this.log.debug(`Received no partitions from Alarm.com.`);
+        } else if (res[key].length > 0) {
+          this.log.info(`Received ${res[key].length} ${device} from Alarm.com`);
 
-            res[key].forEach((d: DeviceState) => {
-              const deviceType = d.type;
-              const realDeviceType = deviceType.split('/')[1];
-              if (!this.ignoredDevices.includes(d.id)) {
-                const uuid = this.api.hap.uuid.generate(d.id);
-                const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
-                if (!existingAccessory) {
-                  if (key === 'cameras') {
-                    this.doorbellHandler.add(d as CameraState);
-                  } else if (realDeviceType === 'partition') {
-                    this.partitionHandler.add(d as PartitionState);
-                  } else if (realDeviceType === 'sensor') {
-                    this.sensorHandler.add(d as SensorState);
-                  } else if (realDeviceType === 'light') {
-                    this.lightHandler.add(d as LightState);
-                  } else if (realDeviceType === 'lock') {
-                    this.lockHandler.add(d as LockState);
-                  } else if (realDeviceType === 'garage-door') {
-                    this.garageHandler.add(d as GarageState);
-                  } else if (realDeviceType === 'thermostat') {
-                    this.thermostatHandler.add(d as ThermostatState);
-                  }
-
-                  this.log.info(`Added ${realDeviceType} ${d.attributes.description} (${d.id})`);
-                } else {
-                  this.log.info(`Restoring accessory with ID ${d.id}`);
+          res[key].forEach((d: DeviceState) => {
+            const deviceType = d.type;
+            const realDeviceType = deviceType.split('/')[1];
+            if (!this.ignoredDevices.includes(d.id)) {
+              const uuid = this.api.hap.uuid.generate(d.id);
+              const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
+              if (!existingAccessory) {
+                if (key === 'cameras') {
+                  this.doorbellHandler.add(d as CameraState);
+                } else if (realDeviceType === 'partition') {
+                  this.partitionHandler.add(d as PartitionState);
+                } else if (realDeviceType === 'sensor') {
+                  this.sensorHandler.add(d as SensorState);
+                } else if (realDeviceType === 'light') {
+                  this.lightHandler.add(d as LightState);
+                } else if (realDeviceType === 'lock') {
+                  this.lockHandler.add(d as LockState);
+                } else if (realDeviceType === 'garage-door') {
+                  this.garageHandler.add(d as GarageState);
+                } else if (realDeviceType === 'thermostat') {
+                  this.thermostatHandler.add(d as ThermostatState);
                 }
+
+                this.log.info(`Added ${realDeviceType} ${d.attributes.description} (${d.id})`);
               } else {
-                this.log.info(`Ignored sensor ${d.attributes.description} (${d.id})`);
+                this.log.info(`Restoring accessory with ID ${d.id}`);
               }
-            });
-          } else {
-            this.log.debug(`Received no ${device} from Alarm.com. If you are expecting
+            } else {
+              this.log.info(`Ignored sensor ${d.attributes.description} (${d.id})`);
+            }
+          });
+        } else {
+          this.log.debug(`Received no ${device} from Alarm.com. If you are expecting
               ${device} in your Alarm.com setup, you may need to check that your
               provider has assigned ${device} in your Alarm.com account`);
-          }
         }
-      })
-      .catch((err) => {
-        this.log.error(`Error: ${err.stack}`);
-      });
+      }
+    } catch (err) {
+      this.log.error(`Error registering devices: ${describeError(err)}`);
+    }
 
     this.setupWebSocket();
     this.hourlyRefreshLoop();
