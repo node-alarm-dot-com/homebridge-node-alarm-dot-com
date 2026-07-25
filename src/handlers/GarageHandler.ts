@@ -49,7 +49,8 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
     const model = accessory.context.garageType;
 
     if (!hap.Characteristic.CurrentDoorState && log.logLevel > 1) {
-      throw new Error(`Unrecognized garage door opener ${id}`);
+      log.error(`Unrecognized garage door opener ${id}`);
+      return;
     }
 
     this.setAccessoryInfo(accessory, model);
@@ -57,7 +58,8 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
 
     const service = accessory.getService(hap.Service.GarageDoorOpener);
     if (service === undefined) {
-      throw new Error(`Trouble getting HomeKit accessory information for ${id}`);
+      log.error(`Trouble getting HomeKit accessory information for ${id}`);
+      return;
     }
 
     service.getCharacteristic(hap.Characteristic.CurrentDoorState).on('get', (callback: CharacteristicGetCallback) => {

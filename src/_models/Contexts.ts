@@ -46,6 +46,7 @@ export interface PartitionContext extends BaseContext {
   state: CharacteristicValue;
   desiredState: CharacteristicValue;
   statusFault: boolean;
+  supportsNightArming: boolean;
   partitionType: 'default';
 }
 
@@ -77,6 +78,14 @@ export interface ThermostatContext extends BaseContext {
   humidityLevel: CharacteristicValue;
 }
 
+export interface DoorbellContext extends BaseContext {
+  accID: string;
+  name: string;
+  model: string;
+  motionDetected: boolean;
+  doorbellType: 'default';
+}
+
 // Region: Function Casts
 
 export function isPartition(accessory: PlatformAccessory): accessory is PlatformAccessory<PartitionContext> {
@@ -96,6 +105,9 @@ export function isGarage(accessory: PlatformAccessory): accessory is PlatformAcc
 }
 export function isThermostat(accessory: PlatformAccessory): accessory is PlatformAccessory<ThermostatContext> {
   return (accessory as PlatformAccessory<ThermostatContext>).context.thermostatType !== undefined;
+}
+export function isDoorbell(accessory: PlatformAccessory): accessory is PlatformAccessory<DoorbellContext> {
+  return (accessory as PlatformAccessory<DoorbellContext>).context.doorbellType !== undefined;
 }
 
 // End Region

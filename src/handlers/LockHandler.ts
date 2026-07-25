@@ -49,7 +49,8 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
     const model = accessory.context.lockType;
 
     if (!hap.Characteristic.LockCurrentState && log.logLevel > 1) {
-      throw new Error(`Unrecognized lock ${id}`);
+      log.error(`Unrecognized lock ${id}`);
+      return;
     }
 
     this.setAccessoryInfo(accessory, model);
@@ -57,7 +58,8 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
 
     const service = accessory.getService(hap.Service.LockMechanism);
     if (service === undefined) {
-      throw new Error(`Trouble getting service for ${id}`);
+      log.error(`Trouble getting service for ${id}`);
+      return;
     }
 
     service.getCharacteristic(hap.Characteristic.LockCurrentState).on('get', (callback: CharacteristicGetCallback) => {
@@ -82,7 +84,8 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
 
     const service = accessory.getService(hap.Service.LockMechanism);
     if (service === undefined) {
-      throw new Error(`Trouble getting HomeKit accessory information for ${id}`);
+      log.error(`Trouble getting HomeKit accessory information for ${id}`);
+      return;
     }
 
     if (state !== accessory.context.state) {
@@ -159,7 +162,8 @@ export class LockHandler extends BaseHandler<LockContext, LockState, boolean> {
 
     const service = accessory.getService(hap.Service.LockMechanism);
     if (service === undefined) {
-      throw new Error(`Trouble getting service for lock ${id}`);
+      log.error(`Trouble getting service for lock ${id}`);
+      return;
     }
 
     if (state !== accessory.context.state) {

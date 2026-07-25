@@ -17,10 +17,11 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
 # Supported Features
 
 - Two-Factor Authentication
+- WebSockets for near-instant updates
 - Querying panels
   - Arming
   - Disarming
-- Sensors (due to lag and capabilities in Alarm.com's web API, these features are partially supported)
+- Sensors
   - Contact sensor states
   - Water leak sensor states
   - Motion sensor states
@@ -30,14 +31,17 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
 - Locks
   - Lock/Unlock switch
 - Garage Doors
-  - Open/Close switch 
-- Thermostats 
-  - Set mode Off/Heat/Cool/Auto 
+  - Open/Close switch
+- Thermostats
+  - Set mode Off/Heat/Cool/Auto
   - Set desired Heat/Cool temperatures
+  - View humidity
+- Doorbells
+  - Doorbells appear as a motion sensor for notifications only. Video/audio is not supported
 
 # Installation
 
-1. Install homebridge: `npm install -g homebridge`
+1. [Install homebridge](https://homebridge.io/how-to-install-homebridge)
 2. Install this plugin: `npm install -g homebridge-node-alarm-dot-com`
 3. Update your configuration file (see below).
 
@@ -52,7 +56,7 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
   "password": "<YOUR ALARM.COM PASSWORD>",
   "useMFA": true,
   "mfaCookie": "<USE INSTRUCTIONS IN THE WIKI>",
-  "logLevel": 4,
+  "logLevel": 2,
   "authTimeoutMinutes": 10,
   "pollTimeoutSeconds": 30,
   "armingModes": {
@@ -85,18 +89,18 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
 - `name`: Can be anything (required)
 - `username`: Alarm.com login username, same as app (required)
 - `password`: Alarm.com login password, same as app (required)
-- `useMFA`: boolean indicating if your account requires MFA (required)
+- `useMFA`: boolean indicating if your account requires MFA (required and highly recommended)
 - `mfaCookie`: MFA cookie to be sent with your API requests. Only needed if "useMFA" is set to `true`
-- `armingModes`: Object of objects with arming mode options of boolean choices (**WARNING:** the Alarm.com webAPI does not support setting silent arming to true and this feature does not work at this time)
-- `authTimeoutMinutes`: Timeout to Re-Authenticate session (**WARNING:** choosing a time less than 10 minutes could possibly ban/disable your account from Alarm.com)
-- `pollTimeoutSeconds`: Device polling interval (**WARNING:** choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com)
+- `armingModes`: Object of objects with arming mode options of boolean choices (**WARNING:** older versions of the plugin would ignore partition capabilities and send whichever flags you set here. This was a common issue with people setting nightArm on panels that don't support it, causing 422 errors. Please make sure your partition supports whichever flags you set.)
+- `authTimeoutMinutes`: Timeout to Re-Authenticate session (**WARNING:** choosing a time less than 10 minutes could possibly ban/disable your account from Alarm.com).
+- `pollTimeoutSeconds`: Device polling interval, only used as a fallback if the WebSocket connection repeatedly fails to establish (**WARNING:** choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com).
 - `logLevel`: Adjust what gets reported in the logs
   - 0 = NO LOG ENTRIES
   - 1 = ONLY ERRORS
-  - 2 = ONLY WARNINGS and ERRORS
-  - **3 = GENERAL NOTICES, ERRORS and WARNINGS (default)**
+  - **2 = ONLY WARNINGS and ERRORS (default)**
+  - 3 = GENERAL NOTICES, ERRORS and WARNINGS
   - 4 = VERBOSE (everything including development output, this also generates a file `ADC-SystemStates.json` with the payload details from Alarm.com in the same folder as the Homebridge config.json file)
-- `ignoredDevices`: An array of IDs for Alarm.com accessories you wish to hide in Homekit
+- `ignoredDevices`: An array of IDs for Alarm.com accessories you wish to ignore.
 
 # Troubleshooting
 
@@ -106,17 +110,11 @@ Before assuming that something is wrong with the plugin, please review the [issu
 
 Due to changes in the way sensors are polled in v1.9.0, there have reports of needing to clear your device cache after this upgrade. See [this issue](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/issues/107) for more information.
 
-## Migrating from Bryan Bartow's homebridge-alarm.com
-
-If you are replacing the Bryan Bartow's Homebridge plugin with this implementation, you may be required to delete the `~/.homebridge/accessories/cachedAccessories` file for the new platform to show up with the new panel, accessories and devices.
-
-**WARNING:** If you delete the contents of the `~/.homebridge/persist` folder, your Homebridge and devices will become unresponsive and you will have to entirely re-pair the Homebridge bridge (remove and re-scan the QR-code for Homebridge and set up all of your accessories/devices again).
-
 ## Logging
 
-The default setting for log entries is set to report critical errors, warnings about devices and notices about connecting to the Alarm.com account. Once you feel that your security system devices are being represented in HomeKit correctly you can choose to reduce the amount of information being output to the logs to save space or remove cruft while troubleshooting other Homebridge plugins.
+The default setting for log entries is set to report critical errors and warnings about devices. Once you feel that your security system devices are being represented in HomeKit correctly you can choose to reduce the amount of information being output to the logs to save space or remove cruft while troubleshooting other Homebridge plugins.
 
-To modify the log behaviour, add the "logLevel" field to the Alarmdotcom platform block in the Homebridge configuration file. The following example illustrates that we only want critical errors to be reported in the log.
+To modify the log behaviour, add the "logLevel" field to the Alarmdotcom platform block in the Homebridge configuration file, or through the web UI.
 
 ## Ignoring Devices
 

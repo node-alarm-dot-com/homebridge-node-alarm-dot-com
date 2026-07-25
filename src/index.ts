@@ -4,6 +4,8 @@ import fs from 'fs';
 
 import {
   AuthOpts,
+  CAMERA_EVENT_TYPES,
+  CameraState,
   DeviceState,
   FlattenedSystemState,
   GARAGE_EVENT_TYPES,
@@ -31,10 +33,21 @@ import {
 
 import path from 'path';
 
-import { BaseContext, isGarage, isLight, isLock, isPartition, isSensor, isThermostat } from './_models/Contexts';
+import { describeError } from 'node-alarm-dot-com/dist/_utils';
+import {
+  BaseContext,
+  isDoorbell,
+  isGarage,
+  isLight,
+  isLock,
+  isPartition,
+  isSensor,
+  isThermostat
+} from './_models/Contexts';
 import { ArmingModes, PluginPlatformConfig } from './_models/PluginPlatformConfig';
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
+import { DoorbellHandler } from './handlers/DoorbellHandler';
 import { GarageHandler } from './handlers/GarageHandler';
 import { MANUFACTURER } from './handlers/HandlerContext';
 import { LightHandler } from './handlers/LightHandler';
@@ -47,7 +60,11 @@ const PLUGIN_ID = 'homebridge-node-alarm-dot-com';
 const PLUGIN_NAME = 'Alarmdotcom';
 const AUTH_TIMEOUT_MINS = 10;
 const POLL_TIMEOUT_SECS = 60;
-const LOG_LEVEL = CustomLogLevel.NOTICE;
+const WS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const WS_REFRESH_JITTER_MS = 15 * 1000;
+const WS_MAX_CONSECUTIVE_FAILURES = 5;
+const HOURLY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const LOG_LEVEL = CustomLogLevel.WARN;
 
 export = (api: API): void => {
   api.registerPlatform(PLUGIN_ID, PLUGIN_NAME, ADCPlatform);
@@ -66,7 +83,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private password: string;
   private readonly logLevel: CustomLogLevel;
   private useMFA: boolean;
-  private shouldUseWebSockets: boolean;
   private mfaToken?: string;
   tempDisplayUnitSetting: number;
   armingModes: ArmingModes;
@@ -75,6 +91,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private pollTimeoutSeconds: number;
   private timerHandle: NodeJS.Timeout | undefined;
   private wsClient: WebSocket | undefined;
+  private isShuttingDown = false;
+  private unmatchedDeviceRefreshHandle: NodeJS.Timeout | undefined;
+  private wsRefreshHandle: NodeJS.Timeout | undefined;
+  private hourlyRefreshHandle: NodeJS.Timeout | undefined;
+  private wsConsecutiveFailures = 0;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -82,6 +103,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private readonly lockHandler: LockHandler;
   private readonly garageHandler: GarageHandler;
   private readonly thermostatHandler: ThermostatHandler;
+  private readonly doorbellHandler: DoorbellHandler;
 
   constructor(log: Logger, config: PlatformConfig, api: API) {
     this.api = api;
@@ -92,7 +114,6 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.log = new CustomLogger(log, this.logLevel);
     this.ignoredDevices = this.config.ignoredDevices ?? [];
     this.useMFA = this.config.useMFA ?? false;
-    this.shouldUseWebSockets = this.config.shouldUseWebSockets ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : undefined;
     this.tempDisplayUnitSetting = api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS;
 
@@ -143,6 +164,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.lockHandler = new LockHandler(this);
     this.garageHandler = new GarageHandler(this);
     this.thermostatHandler = new ThermostatHandler(this);
+    this.doorbellHandler = new DoorbellHandler(this);
 
     if (!api && !config) {
       return;
@@ -199,7 +221,9 @@ class ADCPlatform implements DynamicPlatformPlugin {
                 const uuid = this.api.hap.uuid.generate(d.id);
                 const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
                 if (!existingAccessory) {
-                  if (realDeviceType === 'partition') {
+                  if (key === 'cameras') {
+                    this.doorbellHandler.add(d as CameraState);
+                  } else if (realDeviceType === 'partition') {
                     this.partitionHandler.add(d as PartitionState);
                   } else if (realDeviceType === 'sensor') {
                     this.sensorHandler.add(d as SensorState);
@@ -232,18 +256,28 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.log.error(`Error: ${err.stack}`);
       });
 
-    if (this.shouldUseWebSockets) {
-      this.setupWebSocket();
-    } else {
-      this.timerHandle = this.timerLoop();
-    }
+    this.setupWebSocket();
+    this.hourlyRefreshLoop();
   }
 
   cleanup(): void {
     this.log.info('Cleaning up homebridge-node-alarm-dot-com');
+    this.isShuttingDown = true;
     if (this.timerHandle) {
       clearTimeout(this.timerHandle);
       this.timerHandle = undefined;
+    }
+    if (this.unmatchedDeviceRefreshHandle) {
+      clearTimeout(this.unmatchedDeviceRefreshHandle);
+      this.unmatchedDeviceRefreshHandle = undefined;
+    }
+    if (this.wsRefreshHandle) {
+      clearTimeout(this.wsRefreshHandle);
+      this.wsRefreshHandle = undefined;
+    }
+    if (this.hourlyRefreshHandle) {
+      clearTimeout(this.hourlyRefreshHandle);
+      this.hourlyRefreshHandle = undefined;
     }
     if (this.wsClient) {
       this.wsClient.close();
@@ -251,19 +285,37 @@ class ADCPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  timerLoop(): NodeJS.Timeout {
+  hourlyRefreshLoop(): void {
+    this.hourlyRefreshHandle = setTimeout(() => {
+      this.log.debug('Performing hourly safety-net device refresh...');
+      this.refreshDevices();
+      this.hourlyRefreshLoop();
+    }, HOURLY_REFRESH_INTERVAL_MS);
+  }
+
+  timerLoop(): void {
     const timerDelay = this.pollTimeoutSeconds * 1000 + 30000 * Math.random();
-    return setTimeout(() => {
+    this.timerHandle = setTimeout(() => {
       this.refreshDevices();
       this.timerLoop();
     }, timerDelay);
   }
 
   private async setupWebSocket(): Promise<void> {
+    if (this.isShuttingDown) {
+      return;
+    }
+
     try {
       const authOpts = await this.loginSession();
       const tokenResponse = await getWebSocketToken(authOpts);
       const wsUrl = `${tokenResponse.endpoint}?auth=${tokenResponse.value}`;
+
+      if (this.wsClient) {
+        this.wsClient.onclose = null;
+        this.wsClient.close();
+        this.wsClient = undefined;
+      }
 
       this.log.info('Connecting to Alarm.com WebSocket...');
       this.wsClient = new WebSocket(wsUrl);
@@ -279,25 +331,71 @@ class ADCPlatform implements DynamicPlatformPlugin {
       };
 
       this.wsClient.onclose = () => {
-        this.log.info('WebSocket connection closed, reconnecting in 5s...');
-        setTimeout(() => this.setupWebSocket(), 5000);
+        if (this.isShuttingDown) {
+          this.log.info('WebSocket connection closed.');
+          return;
+        }
+        this.log.info('WebSocket connection closed.');
+        this.scheduleWebSocketRetry(5000);
       };
 
       this.wsClient.onerror = (err) => {
-        this.log.error(`WebSocket error: ${JSON.stringify(err)}`);
+        this.log.error(`WebSocket error: ${describeError(err)}`);
       };
 
       this.log.info('WebSocket connection established.');
+
+      if (this.wsConsecutiveFailures > 0) {
+        this.log.info('WebSocket connection recovered; stopping polling fallback.');
+      }
+      this.wsConsecutiveFailures = 0;
+      if (this.timerHandle) {
+        clearTimeout(this.timerHandle);
+        this.timerHandle = undefined;
+      }
+
+      if (this.wsRefreshHandle) {
+        clearTimeout(this.wsRefreshHandle);
+      }
+      this.wsRefreshHandle = setTimeout(
+        () => {
+          this.log.debug('Proactively refreshing WebSocket session before it expires...');
+          // Purposefully expire authopts to force a token refresh.
+          this.authOpts.expires = +new Date() - 1;
+          this.setupWebSocket();
+        },
+        WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
+      );
     } catch (err) {
+      if (this.isShuttingDown) {
+        return;
+      }
       if (String(err).includes('status=403')) {
         this.log.info('WebSocket token fetch returned 403, forcing re-authentication...');
         this.authOpts.expires = +new Date() - 1;
-        setTimeout(() => this.setupWebSocket(), 5000);
+        this.scheduleWebSocketRetry(5000);
       } else {
-        this.log.error(`WebSocket setup failed: ${err}`);
-        this.log.info('Retrying WebSocket connection in 30s...');
-        setTimeout(() => this.setupWebSocket(), 30000);
+        this.log.error(`WebSocket setup failed: ${describeError(err)}`);
+        this.scheduleWebSocketRetry(30000);
       }
+    }
+  }
+
+  private scheduleWebSocketRetry(delayMs: number): void {
+    this.wsConsecutiveFailures++;
+
+    if (this.wsConsecutiveFailures >= WS_MAX_CONSECUTIVE_FAILURES) {
+      if (!this.timerHandle) {
+        this.log.warn(
+          `WebSocket connection failed ${this.wsConsecutiveFailures} times in a row; falling back to polling every ${this.pollTimeoutSeconds}s until it recovers.`
+        );
+        this.timerLoop();
+      }
+      this.log.info(`Retrying WebSocket connection in ${WS_REFRESH_INTERVAL_MS / 1000}s...`);
+      setTimeout(() => this.setupWebSocket(), WS_REFRESH_INTERVAL_MS);
+    } else {
+      this.log.info(`Retrying WebSocket connection in ${delayMs / 1000}s...`);
+      setTimeout(() => this.setupWebSocket(), delayMs);
     }
   }
 
@@ -309,7 +407,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
       const accessory = this.accessories.find((a) => matchesId(a.context.accID));
       if (!accessory) {
         this.log.warn(`WebSocket: no device matched DeviceId ${event.DeviceId}, falling back to full refresh`);
-        await setTimeout(() => this.refreshDevices(), POLL_TIMEOUT_SECS);
+        if (this.unmatchedDeviceRefreshHandle) {
+          clearTimeout(this.unmatchedDeviceRefreshHandle);
+        }
+        this.unmatchedDeviceRefreshHandle = setTimeout(() => {
+          this.unmatchedDeviceRefreshHandle = undefined;
+          this.refreshDevices();
+        }, POLL_TIMEOUT_SECS * 1000);
         return;
       }
 
@@ -326,7 +430,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
           const handled = this.sensorHandler.statFromWebSocket(accessory, EventType);
           if (!handled) {
             const [sensor] = await getSensors([accessory.context.accID], authOpts);
-            if (sensor) setTimeout(() => this.sensorHandler.refresh(sensor), POLL_TIMEOUT_SECS);
+            if (sensor) setTimeout(() => this.sensorHandler.refresh(sensor), POLL_TIMEOUT_SECS * 1000);
             this.log.debug(
               `WebSocket: unable to directly stat sensor event type ${EventType}. Falling back to refresh.`
             );
@@ -339,7 +443,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
           const handled = this.partitionHandler.statFromWebSocket(accessory, EventType);
           if (!handled) {
             const [partition] = await getPartitions([accessory.context.accID], authOpts);
-            if (partition) setTimeout(() => this.partitionHandler.refresh(partition), POLL_TIMEOUT_SECS);
+            if (partition) setTimeout(() => this.partitionHandler.refresh(partition), POLL_TIMEOUT_SECS * 1000);
             this.log.debug(`WebSocket: falling back to refresh for partition event ${EventType}`);
           }
         } else {
@@ -362,10 +466,16 @@ class ADCPlatform implements DynamicPlatformPlugin {
           const handled = this.thermostatHandler.statFromWebSocket(accessory, event);
           if (!handled) {
             const [thermostat] = await getThermostats([accessory.context.accID], authOpts);
-            if (thermostat) setTimeout(() => this.thermostatHandler.refresh(thermostat), POLL_TIMEOUT_SECS);
+            if (thermostat) setTimeout(() => this.thermostatHandler.refresh(thermostat), POLL_TIMEOUT_SECS * 1000);
           }
         } else {
           this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
+        }
+      } else if (isDoorbell(accessory)) {
+        if (CAMERA_EVENT_TYPES.has(EventType)) {
+          this.doorbellHandler.statFromWebSocket(accessory, EventType);
+        } else {
+          this.log.debug(`WebSocket: unknown doorbell event type ${EventType} for ${accessory.context.name}`);
         }
       } else {
         this.log.info(`Received a WS event for an unknown device type. Ignoring`);
@@ -397,6 +507,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.garageHandler.setup(accessory);
     } else if (isThermostat(accessory)) {
       this.thermostatHandler.setup(accessory);
+    } else if (isDoorbell(accessory)) {
+      this.doorbellHandler.setup(accessory);
     } else {
       this.log.warn(`Unrecognized accessory ${accessory.context['accID']} loaded from cache`);
     }
@@ -437,6 +549,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         out.locks = out.locks.concat(system.locks);
         out.garages = out.garages.concat(system.garages);
         out.thermostats = out.thermostats.concat(system.thermostats);
+        out.cameras = out.cameras.concat(system.cameras);
         return out;
       },
       {
@@ -445,7 +558,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
         lights: [] as LightState[],
         locks: [] as LockState[],
         garages: [] as GarageState[],
-        thermostats: [] as ThermostatState[]
+        thermostats: [] as ThermostatState[],
+        cameras: [] as CameraState[]
       }
     );
   }
@@ -521,6 +635,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
             this.log.info(
               'No thermostats found, ignore if expected, or check configuration with security system provider'
             );
+          }
+
+          if (system.cameras) {
+            system.cameras.forEach((c) => this.doorbellHandler.refresh(c as CameraState));
+          } else {
+            this.log.info('No cameras found, ignore if expected, or check configuration with security system provider');
           }
         });
       })

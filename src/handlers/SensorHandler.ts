@@ -48,8 +48,9 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
     const id = accessory.context.accID;
     const model = accessory.context.sensorType;
     const [type, characteristic] = sensorModelToType(model, hap);
-    if (!characteristic && log.logLevel > 1) {
-      throw new Error(`Unrecognized sensor ${id}`);
+    if (!characteristic) {
+      log.error(`Unrecognized sensor ${id}`);
+      return;
     }
 
     this.setAccessoryInfo(accessory, model);

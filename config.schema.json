@@ -52,20 +52,15 @@
       "logLevel": {
         "title": "<b>Log Level</b>",
         "type": "integer",
-        "default": 3,
+        "default": 2,
         "required": true,
         "oneOf": [
           {"title": "0 - No log entries", "enum": [0]},
           {"title": "1 - Only errors", "enum": [1]},
-          {"title": "2 - Only warnings and errors", "enum": [2]},
-          {"title": "3 - Notices, warnings, and errors (Default)", "enum": [3]},
+          {"title": "2 - Only warnings and errors (Default)", "enum": [2]},
+          {"title": "3 - Notices, warnings, and errors", "enum": [3]},
           {"title": "4 - Verbose", "enum": [4]}
         ]
-      },
-      "shouldUseWebSockets": {
-        "title": "<b>EXPERIMENTAL: Use WebSockets instead of polling</b>",
-        "type": "boolean",
-        "description": "EXPERIMENTAL: Instead of periodically checking for updates to your system, we can attempt to use WebSockets for near-instantaneous updates."
       },
       "authTimeoutMinutes": {
         "title": "<b>Timeout to Re-Authenticate Session</b>",
@@ -77,7 +72,7 @@
         "title": "<b>Device Polling Interval<b>",
         "type": "integer",
         "placeholder": 60,
-        "description": "(<u>WARNING:</u> choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com.)"
+        "description": "Only used as a fallback if the WebSocket connection repeatedly fails to establish. (<u>WARNING:</u> choosing a time less than 60 seconds could possibly ban/disable your account from Alarm.com.)"
       },
       "armingModes": {
         "title": "<b>Alarm.com arming modes</b>.<p>Not all panels are compatible with silent arming. Enabling this without proper support will break that arming type.",
@@ -107,6 +102,11 @@
           "type": "string",
           "placeholder": "96922426-1 (Example)"
         }
+      },
+      "supportAnyDoorbellCamera": {
+        "title": "<b>Support Any Doorbell Camera</b>",
+        "type": "boolean",
+        "description": "When enabled, any camera where isDoorbellCamera is true will be registered as a doorbell in HomeKit, in addition to the ADC-VDB750 which is always supported."
       }
     }
   }

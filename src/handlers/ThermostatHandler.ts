@@ -63,7 +63,8 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
     const model = accessory.context.thermostatType;
 
     if (!hap.Characteristic.TargetTemperature && log.logLevel > 1) {
-      throw new Error(`Unrecognized thermostat ${id}`);
+      log.error(`Unrecognized thermostat ${id}`);
+      return;
     }
 
     this.setAccessoryInfo(accessory, model);
@@ -71,7 +72,8 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
 
     const service = accessory.getService(hap.Service.Thermostat);
     if (service === undefined) {
-      throw new Error(`Trouble getting HomeKit accessory information for ${id}`);
+      log.error(`Trouble getting HomeKit accessory information for ${id}`);
+      return;
     }
 
     service
@@ -343,7 +345,7 @@ function getThermostatTargetTemperature(thermostat: ThermostatState, convertToC:
 }
 
 function convertFtoC(f: number): number {
-  return Math.round((5 / 9) * (f - 32));
+  return Math.round((((f - 32) * 5) / 9) * 2) / 2;
 }
 
 function convertCtoF(c: number): number {

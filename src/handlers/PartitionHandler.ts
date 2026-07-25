@@ -36,6 +36,7 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
       state: SYSTEM_STATES.UNKNOWN,
       desiredState: SYSTEM_STATES.UNKNOWN,
       statusFault: false,
+      supportsNightArming: (partition.attributes.extendedArmingOptions?.ArmedNight ?? []).includes(3),
       partitionType: 'default'
     };
 
@@ -66,6 +67,8 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
 
     service
       .getCharacteristic(hap.Characteristic.SecuritySystemTargetState)
+      // Notify HomeKit of valid arming modes. Protects against night arming when not supported.
+      .setProps({ validValues: getValidTargetStates(accessory.context.supportsNightArming ?? false, hap) })
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.desiredState))
       .on('set', (value: CharacteristicValue, callback: CharacteristicSetCallback) =>
         this.changeState(accessory, value, callback)
@@ -110,6 +113,15 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
       accessory.context.statusFault = statusFault;
       service.getCharacteristic(hap.Characteristic.StatusFault).updateValue(statusFault);
     }
+
+    const supportsNightArming = (partition.attributes.extendedArmingOptions?.ArmedNight ?? []).includes(3);
+    if (supportsNightArming !== (accessory.context.supportsNightArming ?? false)) {
+      log.info(`Updating partition ${name} (${id}), supportsNightArming=${supportsNightArming}`);
+      accessory.context.supportsNightArming = supportsNightArming;
+      service
+        .getCharacteristic(hap.Characteristic.SecuritySystemTargetState)
+        .setProps({ validValues: getValidTargetStates(supportsNightArming, hap) });
+    }
   }
 
   async changeState(
@@ -132,6 +144,11 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
         opts.forceBypass = armingModes.stay.forceBypass;
         break;
       case hap.Characteristic.SecuritySystemTargetState.NIGHT_ARM:
+        if (!accessory.context.supportsNightArming) {
+          const msg = `Panel does not support night arming`;
+          log.warn(msg);
+          return callback(new Error(msg));
+        }
         method = armStay;
         opts.noEntryDelay = armingModes.night.noEntryDelay;
         opts.silentArming = armingModes.night.silentArming;
@@ -220,6 +237,25 @@ export class PartitionHandler extends BaseHandler<PartitionContext, PartitionSta
 
     return true;
   }
+}
+
+/**
+ * Helper function which returns an array of valid SecuritySystemTargetStates for a partition.
+ * Used to determine if HomeKit should expose a night arming option.
+ * @param supportsNightArming Whether night arming is a valid option for the partition.
+ * @param hap Singleton instance of HAP
+ * @returns An array of valid Characteristic.SecuritySystemTargetState for the partition.
+ */
+function getValidTargetStates(supportsNightArming: boolean, hap: HAP): number[] {
+  const values = [
+    hap.Characteristic.SecuritySystemTargetState.STAY_ARM,
+    hap.Characteristic.SecuritySystemTargetState.AWAY_ARM,
+    hap.Characteristic.SecuritySystemTargetState.DISARM
+  ];
+  if (supportsNightArming) {
+    values.push(hap.Characteristic.SecuritySystemTargetState.NIGHT_ARM);
+  }
+  return values;
 }
 
 function getPartitionState(state: number, hap: HAP): number {

@@ -9,7 +9,10 @@
       "request": "launch",
       "name": "Launch NPM Watch",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run-script", "watch"],
+      "runtimeArgs": [
+        "run-script",
+        "watch"
+      ],
       "enableContentValidation": true,
       "killBehavior": "polite",
       "smartStep": true
