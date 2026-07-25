@@ -330,17 +330,17 @@ class ADCPlatform implements DynamicPlatformPlugin {
         }
       };
 
-      this.wsClient.onclose = () => {
+      this.wsClient.onclose = (event) => {
         if (this.isShuttingDown) {
           this.log.info('WebSocket connection closed.');
           return;
         }
-        this.log.info('WebSocket connection closed.');
+        this.log.info(`WebSocket connection closed (${formatWebSocketClose(event)}).`);
         this.scheduleWebSocketRetry(5000);
       };
 
       this.wsClient.onerror = (err) => {
-        this.log.error(`WebSocket error: ${describeError(err)}`);
+        this.log.error(`WebSocket error: ${formatWebSocketError(err)}`);
       };
 
       this.log.info('WebSocket connection established.');
@@ -720,4 +720,32 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
 function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]> {
   return Promise.all(res.systems.map((id: string) => getCurrentState(id, res)));
+}
+
+/**
+ * Node's WebSocket ErrorEvent often has an empty message; the useful detail is on `.error`.
+ * util.inspect(ErrorEvent) also omits that cause, which produced opaque logs like:
+ * `WebSocket error: ErrorEvent { type: 'error', ... }`.
+ */
+function formatWebSocketError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const event = err as { type?: unknown; message?: unknown; error?: unknown };
+    if ('error' in event && event.error !== undefined && event.error !== null) {
+      const parts: string[] = [];
+      if (typeof event.type === 'string' && event.type) {
+        parts.push(`type=${event.type}`);
+      }
+      if (typeof event.message === 'string' && event.message) {
+        parts.push(`message=${event.message}`);
+      }
+      parts.push(`cause=${describeError(event.error)}`);
+      return parts.join(', ');
+    }
+  }
+  return describeError(err);
+}
+
+function formatWebSocketClose(event: { code: number; reason: string; wasClean: boolean }): string {
+  const reason = event.reason.trim() ? event.reason : 'none';
+  return `code=${event.code}, reason=${reason}, wasClean=${event.wasClean}`;
 }
