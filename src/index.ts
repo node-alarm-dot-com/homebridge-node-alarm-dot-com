@@ -523,18 +523,25 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const now = +new Date();
     if (now > this.authOpts.expires) {
       this.log.debug(`Logging into Alarm.com as ${this.username}`);
-      await login(this.username, this.password, this.useMFA ? this.mfaToken : undefined)
-        .then((authOpts) => {
-          authOpts.expires = +new Date() + 1000 * 60 * this.authTimeoutMinutes;
-          this.authOpts = authOpts;
-          this.log.debug(`Logged into Alarm.com as ${this.username}`);
-        })
-        .catch((err) => {
-          this.log.error(`loginSession Error: ${err.message}`);
-          this.log.info('Refreshing session authentication.');
-          this.authOpts.expires = +new Date() - 1000 * 60 * this.authTimeoutMinutes;
-        });
+      try {
+        const authOpts = await login(this.username, this.password, this.useMFA ? this.mfaToken : undefined);
+        authOpts.expires = +new Date() + 1000 * 60 * this.authTimeoutMinutes;
+        this.authOpts = authOpts;
+        this.log.debug(`Logged into Alarm.com as ${this.username}`);
+      } catch (err) {
+        // Keep the session expired so the next call retries login, but do not
+        // return the stub/partial AuthOpts — callers must not proceed unauthenticated.
+        this.authOpts.expires = +new Date() - 1;
+        this.log.error(`loginSession Error: ${describeError(err)}`);
+        throw err instanceof Error ? err : new Error(describeError(err));
+      }
     }
+
+    if (!isAuthenticatedSession(this.authOpts)) {
+      this.authOpts.expires = +new Date() - 1;
+      throw new Error('Alarm.com session is not authenticated');
+    }
+
     return this.authOpts;
   }
 
@@ -719,5 +726,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
 }
 
 function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]> {
+  if (!Array.isArray(res.systems)) {
+    throw new Error('Alarm.com session has no systems; login may have failed');
+  }
   return Promise.all(res.systems.map((id: string) => getCurrentState(id, res)));
+}
+
+function isAuthenticatedSession(auth: AuthOpts): boolean {
+  return Boolean(auth.cookie && auth.ajaxKey && Array.isArray(auth.systems));
 }
