@@ -13,6 +13,7 @@ export interface HandlerContext {
   readonly ignoredDevices: string[];
   readonly armingModes: ArmingModes;
   readonly tempDisplayUnitSetting: number;
+  readonly supportAnyDoorbellCamera: boolean;
   loginSession(): Promise<AuthOpts>;
   refreshDevices(): Promise<void>;
   addAccessory(accessory: PlatformAccessory<BaseContext>, type: typeof Service, model: string): void;

@@ -38,6 +38,8 @@ This is a plugin for Homebridge, allowing communication with Alarm.com endpoints
   - View humidity
 - Doorbells
   - Doorbells appear as a motion sensor for notifications only. Video/audio is not supported
+  - The ADC-VDB750 is supported by default. Other camera models are only exposed when Alarm.com identifies them as
+    doorbells and `supportAnyDoorbellCamera` is enabled.
 
 # Installation
 

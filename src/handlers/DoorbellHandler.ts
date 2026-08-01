@@ -1,8 +1,22 @@
 import { CharacteristicGetCallback, PlatformAccessory } from 'homebridge';
 import { CameraState, WebSocketEventTypes } from 'node-alarm-dot-com';
-import { DoorbellContext } from '../_models/Contexts';
+import { DoorbellContext, isDoorbell } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
 import { HandlerContext } from './HandlerContext';
+
+type DoorbellCamera = {
+  attributes: {
+    deviceModel: string;
+    isDoorbellCamera?: boolean;
+  };
+};
+
+export function isSupportedDoorbellCamera(camera: DoorbellCamera, supportAnyDoorbellCamera: boolean): boolean {
+  return (
+    camera.attributes.deviceModel === 'ADC-VDB750' ||
+    (supportAnyDoorbellCamera && camera.attributes.isDoorbellCamera === true)
+  );
+}
 
 export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, WebSocketEventTypes> {
   constructor(ctx: HandlerContext) {
@@ -11,6 +25,10 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
 
   add(camera: CameraState): void {
     const { api, log, ignoredDevices } = this.ctx;
+    if (!isSupportedDoorbellCamera(camera, this.ctx.supportAnyDoorbellCamera)) {
+      return;
+    }
+
     const hap = api.hap;
     const id = camera.id;
     const model = camera.attributes.deviceModel;
@@ -21,6 +39,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       accID: id,
       name: name,
       model: model,
+      isDoorbellCamera: camera.attributes.isDoorbellCamera,
       motionDetected: false,
       doorbellType: 'default'
     };
@@ -32,6 +51,18 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       this.setup(accessory);
       this.stat(accessory, camera);
     }
+  }
+
+  override refresh(camera: CameraState): void {
+    const accessory = this.ctx.accessories.find((a) => a.context.accID === camera.id);
+    if (!isSupportedDoorbellCamera(camera, this.ctx.supportAnyDoorbellCamera)) {
+      if (accessory && isDoorbell(accessory)) {
+        this.ctx.removeAccessory(accessory);
+      }
+      return;
+    }
+
+    super.refresh(camera);
   }
 
   setup(accessory: PlatformAccessory<DoorbellContext>): void {
@@ -63,11 +94,14 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.motionDetected));
   }
 
-  stat(accessory: PlatformAccessory<DoorbellContext>, _camera: CameraState): void {
+  stat(accessory: PlatformAccessory<DoorbellContext>, camera: CameraState): void {
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
     const name = accessory.context.name;
+
+    accessory.context.model = camera.attributes.deviceModel;
+    accessory.context.isDoorbellCamera = camera.attributes.isDoorbellCamera;
 
     log.debug(`Polling doorbell ${name} (${id})`);
 
@@ -79,6 +113,16 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
   }
 
   statFromWebSocket(accessory: PlatformAccessory<DoorbellContext>, eventType: WebSocketEventTypes): boolean {
+    const camera = {
+      attributes: {
+        deviceModel: accessory.context.model,
+        isDoorbellCamera: accessory.context.isDoorbellCamera
+      }
+    };
+    if (!isSupportedDoorbellCamera(camera, this.ctx.supportAnyDoorbellCamera)) {
+      return false;
+    }
+
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;

@@ -3,6 +3,13 @@
 All notable changes to this project are documented in this file, based on the
 [GitHub releases](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/releases).
 
+## Unreleased
+
+### Bugs Squished
+
+- Fixed regular cameras being exposed to HomeKit as doorbells and generating false doorbell notifications. Cached
+  camera accessories created by version 1.13.0 are removed automatically.
+
 ## [1.13.0]
 
 ### Enhancements
