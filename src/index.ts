@@ -392,7 +392,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         );
       };
 
-      client.onclose = () => {
+      client.onclose = (event) => {
         if (this.isShuttingDown) {
           this.log.info('WebSocket connection closed.');
           return;
@@ -401,7 +401,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
           return;
         }
-        this.log.info('WebSocket connection closed.');
+        this.log.info(`WebSocket connection closed (${formatWebSocketClose(event)}).`);
         this.wsClient = undefined;
         this.scheduleWebSocketRetry(5000);
       };
@@ -410,7 +410,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
           return;
         }
-        this.log.error(`WebSocket error: ${describeError(err)}`);
+        this.log.error(`WebSocket error: ${formatWebSocketError(err)}`);
       };
     } catch (err) {
       if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
@@ -789,4 +789,32 @@ function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]>
 
 function isAuthenticatedSession(auth: AuthOpts): boolean {
   return Boolean(auth.cookie && auth.ajaxKey && Array.isArray(auth.systems));
+}
+
+/**
+ * Node's WebSocket ErrorEvent often has an empty message; the useful detail is on `.error`.
+ * util.inspect(ErrorEvent) also omits that cause, which produced opaque logs like:
+ * `WebSocket error: ErrorEvent { type: 'error', ... }`.
+ */
+function formatWebSocketError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const event = err as { type?: unknown; message?: unknown; error?: unknown };
+    if ('error' in event && event.error !== undefined && event.error !== null) {
+      const parts: string[] = [];
+      if (typeof event.type === 'string' && event.type) {
+        parts.push(`type=${event.type}`);
+      }
+      if (typeof event.message === 'string' && event.message) {
+        parts.push(`message=${event.message}`);
+      }
+      parts.push(`cause=${describeError(event.error)}`);
+      return parts.join(', ');
+    }
+  }
+  return describeError(err);
+}
+
+function formatWebSocketClose(event: { code: number; reason: string; wasClean: boolean }): string {
+  const reason = event.reason.trim() ? event.reason : 'none';
+  return `code=${event.code}, reason=${reason}, wasClean=${event.wasClean}`;
 }
