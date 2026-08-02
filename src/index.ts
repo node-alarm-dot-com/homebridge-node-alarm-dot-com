@@ -94,8 +94,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private isShuttingDown = false;
   private unmatchedDeviceRefreshHandle: NodeJS.Timeout | undefined;
   private wsRefreshHandle: NodeJS.Timeout | undefined;
+  private wsRetryHandle: NodeJS.Timeout | undefined;
   private hourlyRefreshHandle: NodeJS.Timeout | undefined;
   private wsConsecutiveFailures = 0;
+  /** Bumped on each setup attempt so superseded connects/retries are ignored. */
+  private wsConnectGeneration = 0;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -263,6 +266,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   cleanup(): void {
     this.log.info('Cleaning up homebridge-node-alarm-dot-com');
     this.isShuttingDown = true;
+    this.wsConnectGeneration++;
     if (this.timerHandle) {
       clearTimeout(this.timerHandle);
       this.timerHandle = undefined;
@@ -275,11 +279,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
       clearTimeout(this.wsRefreshHandle);
       this.wsRefreshHandle = undefined;
     }
+    this.clearWebSocketRetry();
     if (this.hourlyRefreshHandle) {
       clearTimeout(this.hourlyRefreshHandle);
       this.hourlyRefreshHandle = undefined;
     }
     if (this.wsClient) {
+      this.wsClient.onclose = null;
       this.wsClient.close();
       this.wsClient = undefined;
     }
@@ -301,14 +307,38 @@ class ADCPlatform implements DynamicPlatformPlugin {
     }, timerDelay);
   }
 
+  private clearWebSocketRetry(): void {
+    if (this.wsRetryHandle) {
+      clearTimeout(this.wsRetryHandle);
+      this.wsRetryHandle = undefined;
+    }
+  }
+
   private async setupWebSocket(): Promise<void> {
     if (this.isShuttingDown) {
       return;
     }
 
+    // Cancel any pending retry/proactive refresh so only this attempt proceeds.
+    this.clearWebSocketRetry();
+    if (this.wsRefreshHandle) {
+      clearTimeout(this.wsRefreshHandle);
+      this.wsRefreshHandle = undefined;
+    }
+
+    const generation = ++this.wsConnectGeneration;
+
     try {
       const authOpts = await this.loginSession();
+      if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
+        return;
+      }
+
       const tokenResponse = await getWebSocketToken(authOpts);
+      if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
+        return;
+      }
+
       const wsUrl = `${tokenResponse.endpoint}?auth=${tokenResponse.value}`;
 
       if (this.wsClient) {
@@ -318,9 +348,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
       }
 
       this.log.info('Connecting to Alarm.com WebSocket...');
-      this.wsClient = new WebSocket(wsUrl);
+      const client = new WebSocket(wsUrl);
+      this.wsClient = client;
 
-      this.wsClient.onmessage = (event) => {
+      client.onmessage = (event) => {
         try {
           const wsEvent: WebSocketEvent = JSON.parse(event.data as string);
           this.log.debug(`WebSocket event received: ${JSON.stringify(wsEvent)}`);
@@ -330,44 +361,58 @@ class ADCPlatform implements DynamicPlatformPlugin {
         }
       };
 
-      this.wsClient.onclose = () => {
+      client.onopen = () => {
+        if (this.isShuttingDown || generation !== this.wsConnectGeneration || this.wsClient !== client) {
+          return;
+        }
+
+        this.log.info('WebSocket connection established.');
+
+        if (this.wsConsecutiveFailures > 0) {
+          this.log.info('WebSocket connection recovered; stopping polling fallback.');
+        }
+        this.wsConsecutiveFailures = 0;
+        if (this.timerHandle) {
+          clearTimeout(this.timerHandle);
+          this.timerHandle = undefined;
+        }
+
+        if (this.wsRefreshHandle) {
+          clearTimeout(this.wsRefreshHandle);
+        }
+        this.wsRefreshHandle = setTimeout(
+          () => {
+            this.log.debug('Proactively refreshing WebSocket session before it expires...');
+            // Purposefully expire authopts to force a token refresh.
+            this.authOpts.expires = +new Date() - 1;
+            this.setupWebSocket();
+          },
+          WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
+        );
+      };
+
+      client.onclose = () => {
         if (this.isShuttingDown) {
           this.log.info('WebSocket connection closed.');
           return;
         }
+        // Ignore close from a socket that was replaced by a newer setup attempt.
+        if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
+          return;
+        }
         this.log.info('WebSocket connection closed.');
+        this.wsClient = undefined;
         this.scheduleWebSocketRetry(5000);
       };
 
-      this.wsClient.onerror = (err) => {
+      client.onerror = (err) => {
+        if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
+          return;
+        }
         this.log.error(`WebSocket error: ${describeError(err)}`);
       };
-
-      this.log.info('WebSocket connection established.');
-
-      if (this.wsConsecutiveFailures > 0) {
-        this.log.info('WebSocket connection recovered; stopping polling fallback.');
-      }
-      this.wsConsecutiveFailures = 0;
-      if (this.timerHandle) {
-        clearTimeout(this.timerHandle);
-        this.timerHandle = undefined;
-      }
-
-      if (this.wsRefreshHandle) {
-        clearTimeout(this.wsRefreshHandle);
-      }
-      this.wsRefreshHandle = setTimeout(
-        () => {
-          this.log.debug('Proactively refreshing WebSocket session before it expires...');
-          // Purposefully expire authopts to force a token refresh.
-          this.authOpts.expires = +new Date() - 1;
-          this.setupWebSocket();
-        },
-        WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
-      );
     } catch (err) {
-      if (this.isShuttingDown) {
+      if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
         return;
       }
       if (String(err).includes('status=403')) {
@@ -383,6 +428,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
   private scheduleWebSocketRetry(delayMs: number): void {
     this.wsConsecutiveFailures++;
+    this.clearWebSocketRetry();
 
     if (this.wsConsecutiveFailures >= WS_MAX_CONSECUTIVE_FAILURES) {
       if (!this.timerHandle) {
@@ -392,10 +438,16 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.timerLoop();
       }
       this.log.info(`Retrying WebSocket connection in ${WS_REFRESH_INTERVAL_MS / 1000}s...`);
-      setTimeout(() => this.setupWebSocket(), WS_REFRESH_INTERVAL_MS);
+      this.wsRetryHandle = setTimeout(() => {
+        this.wsRetryHandle = undefined;
+        this.setupWebSocket();
+      }, WS_REFRESH_INTERVAL_MS);
     } else {
       this.log.info(`Retrying WebSocket connection in ${delayMs / 1000}s...`);
-      setTimeout(() => this.setupWebSocket(), delayMs);
+      this.wsRetryHandle = setTimeout(() => {
+        this.wsRetryHandle = undefined;
+        this.setupWebSocket();
+      }, delayMs);
     }
   }
 
