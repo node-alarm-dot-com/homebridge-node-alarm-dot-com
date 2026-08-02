@@ -182,10 +182,11 @@ function getSensorState(sensor: SensorState, hap: HAP): CharacteristicValue {
     sensor.attributes.deviceType === SensorType.Heat_Detector ||
     sensor.attributes.deviceType === SensorType.Smoke_Detector
   ) {
-    // ADC uses 0 for clear; any non-zero state is treated as detected.
-    return sensor.attributes.state === 0
-      ? hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED
-      : hap.Characteristic.SmokeDetected.SMOKE_DETECTED;
+    // ADC reuses the generic sensor state enum for these binary detectors:
+    // CLOSED (1) is the idle/clear state, OPEN (2) is alarm/tripped.
+    return sensor.attributes.state === SENSOR_STATES.OPEN
+      ? hap.Characteristic.SmokeDetected.SMOKE_DETECTED
+      : hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED;
   }
 
   if (
@@ -202,9 +203,10 @@ function getSensorState(sensor: SensorState, hap: HAP): CharacteristicValue {
   }
 
   if (sensor.attributes.deviceType === SensorType.CO_Detector) {
-    return sensor.attributes.state === 0
-      ? hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL
-      : hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL;
+    // Same generic enum: CLOSED (1) = normal, OPEN (2) = CO detected.
+    return sensor.attributes.state === SENSOR_STATES.OPEN
+      ? hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL
+      : hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL;
   }
 
   switch (sensor.attributes.state) {
