@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file, based on the
 [GitHub releases](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/releases).
 
+## [1.13.1-Beta]
+
+### Bugs Squished
+
+- Fixed smoke detectors being labeled as "Heat Sensor"; smoke, heat, and CO detectors now map state independently and glass-break/water sensors resolve correctly on cached setup. (#171)
+- Fixed the duplicate-accessory guard never running because the accessories array was pushed before the existence check. (#172)
+- Fixed accessories being registered after the Alarm.com WebSocket opened, which could drop early device events and force a delayed full refresh. (#170)
+- Fixed thermostat AUTO mode being mapped to OFF and pushed onto the wrong HomeKit characteristic; AUTO now works correctly in HomeKit. (#168)
+- Fixed login/session failures being swallowed instead of failing closed, which could crash callers with missing systems. (#166)
+- Fixed overlapping WebSocket connect/retry attempts causing double connections and 403 token churn after reconnect. (#163)
+- Improved WebSocket error logging to include close codes, reason, and underlying error causes for easier diagnosis.
+- Fix stale cached accessories not being removed properly.
+
 ## [1.13.0]
 
 ### Enhancements

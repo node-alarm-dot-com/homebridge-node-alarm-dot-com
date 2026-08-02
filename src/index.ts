@@ -738,7 +738,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     this.log.info(`Removing ${accessory.context.name} (${accessory.context.accID}) from HomeBridge`);
     this.api.unregisterPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
-    this.accessories.splice(this.accessories.indexOf(accessory), 1);
+    const index = this.accessories.indexOf(accessory);
+    if (index !== -1) {
+      this.accessories.splice(index, 1);
+    }
   }
 
   removeAccessories(): void {
