@@ -87,6 +87,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   tempDisplayUnitSetting: number;
   armingModes: ArmingModes;
   ignoredDevices: string[];
+  readonly supportAnyDoorbellCamera: boolean;
   private authTimeoutMinutes: number;
   private pollTimeoutSeconds: number;
   private timerHandle: NodeJS.Timeout | undefined;
@@ -116,6 +117,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.logLevel = this.config.logLevel ?? LOG_LEVEL;
     this.log = new CustomLogger(log, this.logLevel);
     this.ignoredDevices = this.config.ignoredDevices ?? [];
+    this.supportAnyDoorbellCamera = this.config.supportAnyDoorbellCamera ?? false;
     this.useMFA = this.config.useMFA ?? false;
     this.mfaToken = this.config.useMFA ? this.config.mfaCookie : undefined;
     this.tempDisplayUnitSetting = api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS;
@@ -223,12 +225,15 @@ class ADCPlatform implements DynamicPlatformPlugin {
             const deviceType = d.type;
             const realDeviceType = deviceType.split('/')[1];
             if (!this.ignoredDevices.includes(d.id)) {
+              if (key === 'cameras') {
+                this.doorbellHandler.refresh(d as CameraState);
+                return;
+              }
+
               const uuid = this.api.hap.uuid.generate(d.id);
               const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
               if (!existingAccessory) {
-                if (key === 'cameras') {
-                  this.doorbellHandler.add(d as CameraState);
-                } else if (realDeviceType === 'partition') {
+                if (realDeviceType === 'partition') {
                   this.partitionHandler.add(d as PartitionState);
                 } else if (realDeviceType === 'sensor') {
                   this.sensorHandler.add(d as SensorState);

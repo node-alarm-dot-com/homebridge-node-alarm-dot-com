@@ -82,6 +82,7 @@ export interface DoorbellContext extends BaseContext {
   accID: string;
   name: string;
   model: string;
+  isDoorbellCamera?: boolean;
   motionDetected: boolean;
   doorbellType: 'default';
 }

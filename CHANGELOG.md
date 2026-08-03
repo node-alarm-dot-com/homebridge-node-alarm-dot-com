@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file, based on the
 [GitHub releases](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/releases).
 
+## Unreleased
+
+### Bugs Squished
+
+- Removed the HomeKit Doorbell service and ring events from Alarm.com cameras while retaining motion notifications.
+  Regular cameras are no longer exposed, and cached Doorbell services created by version 1.13.0 are removed
+  automatically.
+
 ## [1.13.0]
 
 ### Enhancements

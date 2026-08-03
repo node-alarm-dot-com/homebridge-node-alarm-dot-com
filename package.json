@@ -44,7 +44,7 @@
     "start": "ts-node src/index.ts",
     "start-dev": "homebridge -I -D",
     "watch": "npm run build && npm link && tsc && homebridge -I -D",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run build && node --test test/*.test.js"
   },
   "engines": {
     "node": ">=22.0.0",
