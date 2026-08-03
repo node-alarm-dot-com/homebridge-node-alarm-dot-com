@@ -7,8 +7,9 @@ All notable changes to this project are documented in this file, based on the
 
 ### Bugs Squished
 
-- Fixed regular cameras being exposed to HomeKit as doorbells and generating false doorbell notifications. Cached
-  camera accessories created by version 1.13.0 are removed automatically.
+- Removed the HomeKit Doorbell service and ring events from Alarm.com cameras while retaining motion notifications.
+  Regular cameras are no longer exposed, and cached Doorbell services created by version 1.13.0 are removed
+  automatically.
 
 ## [1.13.0]
 

@@ -46,8 +46,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
 
     if (!ignoredDevices.includes(id)) {
       log.info(`Adding ${model} "${name}" (id=${id}, uuid=${accessory.UUID})`);
-      this.ctx.addAccessory(accessory, hap.Service.Doorbell, model);
-      accessory.addService(hap.Service.MotionSensor);
+      this.ctx.addAccessory(accessory, hap.Service.MotionSensor, model);
       this.setup(accessory);
       this.stat(accessory, camera);
     }
@@ -74,14 +73,10 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
     this.registerIdentify(accessory);
 
     const doorbellService = accessory.getService(hap.Service.Doorbell);
-    if (doorbellService === undefined) {
-      log.error(`Trouble getting Doorbell service for ${accessory.context.accID}`);
-      return;
+    if (doorbellService !== undefined) {
+      log.info(`Removing legacy Doorbell service from ${accessory.context.name} (${accessory.context.accID})`);
+      accessory.removeService(doorbellService);
     }
-
-    doorbellService
-      .getCharacteristic(hap.Characteristic.ProgrammableSwitchEvent)
-      .on('get', (callback: CharacteristicGetCallback) => callback(null, null));
 
     const motionService = accessory.getService(hap.Service.MotionSensor);
     if (motionService === undefined) {
@@ -103,7 +98,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
     accessory.context.model = camera.attributes.deviceModel;
     accessory.context.isDoorbellCamera = camera.attributes.isDoorbellCamera;
 
-    log.debug(`Polling doorbell ${name} (${id})`);
+    log.debug(`Polling camera motion sensor ${name} (${id})`);
 
     if (accessory.context.motionDetected) {
       accessory.context.motionDetected = false;
@@ -123,25 +118,16 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       return false;
     }
 
-    const { api, log } = this.ctx;
-    const hap = api.hap;
-    const id = accessory.context.accID;
-    const name = accessory.context.name;
-
-    if (eventType === WebSocketEventTypes.VideoCameraTriggered) {
-      log.info(`Doorbell ring detected for ${name} (${id})`);
-      const doorbellService = accessory.getService(hap.Service.Doorbell);
-      doorbellService
-        ?.getCharacteristic(hap.Characteristic.ProgrammableSwitchEvent)
-        .updateValue(hap.Characteristic.ProgrammableSwitchEvent.SINGLE_PRESS);
-      return true;
-    }
-
     if (
       eventType === WebSocketEventTypes.VideoAnalyticsDetection ||
       eventType === WebSocketEventTypes.VideoAnalytics2Detection
     ) {
-      log.info(`Motion detected for doorbell ${name} (${id})`);
+      const { api, log } = this.ctx;
+      const hap = api.hap;
+      const id = accessory.context.accID;
+      const name = accessory.context.name;
+
+      log.info(`Motion detected for camera ${name} (${id})`);
       accessory.context.motionDetected = true;
       const motionService = accessory.getService(hap.Service.MotionSensor);
       motionService?.getCharacteristic(hap.Characteristic.MotionDetected).updateValue(true);
@@ -149,7 +135,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       setTimeout(() => {
         accessory.context.motionDetected = false;
         motionService?.getCharacteristic(hap.Characteristic.MotionDetected).updateValue(false);
-        log.debug(`Motion reset for doorbell ${name} (${id})`);
+        log.debug(`Motion reset for camera ${name} (${id})`);
       }, 5000);
 
       return true;
