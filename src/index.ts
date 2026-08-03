@@ -95,8 +95,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private isShuttingDown = false;
   private unmatchedDeviceRefreshHandle: NodeJS.Timeout | undefined;
   private wsRefreshHandle: NodeJS.Timeout | undefined;
+  private wsRetryHandle: NodeJS.Timeout | undefined;
   private hourlyRefreshHandle: NodeJS.Timeout | undefined;
   private wsConsecutiveFailures = 0;
+  /** Bumped on each setup attempt so superseded connects/retries are ignored. */
+  private wsConnectGeneration = 0;
 
   private readonly partitionHandler: PartitionHandler;
   private readonly sensorHandler: SensorHandler;
@@ -204,62 +207,63 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     await this.getAccountSettings();
 
-    this.listDevices()
-      .then((res) => {
-        this.log.debug('Registering system:');
-        this.log.debug(JSON.stringify(res));
+    // Register/restore accessories before opening the WebSocket so early events
+    // can match devices instead of falling back to a delayed full refresh.
+    try {
+      const res = await this.listDevices();
+      this.log.debug('Registering system:');
+      this.log.debug(JSON.stringify(res));
 
-        for (const device in res) {
-          const key = device as keyof SimplifiedSystemState;
-          if (device === 'partitions' && typeof res[key][0] === 'undefined') {
-            this.log.debug(`Received no partitions from Alarm.com.`);
-          } else if (res[key].length > 0) {
-            this.log.info(`Received ${res[key].length} ${device} from Alarm.com`);
+      for (const device in res) {
+        const key = device as keyof SimplifiedSystemState;
+        if (device === 'partitions' && typeof res[key][0] === 'undefined') {
+          this.log.debug(`Received no partitions from Alarm.com.`);
+        } else if (res[key].length > 0) {
+          this.log.info(`Received ${res[key].length} ${device} from Alarm.com`);
 
-            res[key].forEach((d: DeviceState) => {
-              const deviceType = d.type;
-              const realDeviceType = deviceType.split('/')[1];
-              if (!this.ignoredDevices.includes(d.id)) {
-                if (key === 'cameras') {
-                  this.doorbellHandler.refresh(d as CameraState);
-                  return;
-                }
-
-                const uuid = this.api.hap.uuid.generate(d.id);
-                const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
-                if (!existingAccessory) {
-                  if (realDeviceType === 'partition') {
-                    this.partitionHandler.add(d as PartitionState);
-                  } else if (realDeviceType === 'sensor') {
-                    this.sensorHandler.add(d as SensorState);
-                  } else if (realDeviceType === 'light') {
-                    this.lightHandler.add(d as LightState);
-                  } else if (realDeviceType === 'lock') {
-                    this.lockHandler.add(d as LockState);
-                  } else if (realDeviceType === 'garage-door') {
-                    this.garageHandler.add(d as GarageState);
-                  } else if (realDeviceType === 'thermostat') {
-                    this.thermostatHandler.add(d as ThermostatState);
-                  }
-
-                  this.log.info(`Added ${realDeviceType} ${d.attributes.description} (${d.id})`);
-                } else {
-                  this.log.info(`Restoring accessory with ID ${d.id}`);
-                }
-              } else {
-                this.log.info(`Ignored sensor ${d.attributes.description} (${d.id})`);
+          res[key].forEach((d: DeviceState) => {
+            const deviceType = d.type;
+            const realDeviceType = deviceType.split('/')[1];
+            if (!this.ignoredDevices.includes(d.id)) {
+              if (key === 'cameras') {
+                this.doorbellHandler.refresh(d as CameraState);
+                return;
               }
-            });
-          } else {
-            this.log.debug(`Received no ${device} from Alarm.com. If you are expecting
+
+              const uuid = this.api.hap.uuid.generate(d.id);
+              const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
+              if (!existingAccessory) {
+                if (realDeviceType === 'partition') {
+                  this.partitionHandler.add(d as PartitionState);
+                } else if (realDeviceType === 'sensor') {
+                  this.sensorHandler.add(d as SensorState);
+                } else if (realDeviceType === 'light') {
+                  this.lightHandler.add(d as LightState);
+                } else if (realDeviceType === 'lock') {
+                  this.lockHandler.add(d as LockState);
+                } else if (realDeviceType === 'garage-door') {
+                  this.garageHandler.add(d as GarageState);
+                } else if (realDeviceType === 'thermostat') {
+                  this.thermostatHandler.add(d as ThermostatState);
+                }
+
+                this.log.info(`Added ${realDeviceType} ${d.attributes.description} (${d.id})`);
+              } else {
+                this.log.info(`Restoring accessory with ID ${d.id}`);
+              }
+            } else {
+              this.log.info(`Ignored sensor ${d.attributes.description} (${d.id})`);
+            }
+          });
+        } else {
+          this.log.debug(`Received no ${device} from Alarm.com. If you are expecting
               ${device} in your Alarm.com setup, you may need to check that your
               provider has assigned ${device} in your Alarm.com account`);
-          }
         }
-      })
-      .catch((err) => {
-        this.log.error(`Error: ${err.stack}`);
-      });
+      }
+    } catch (err) {
+      this.log.error(`Error registering devices: ${describeError(err)}`);
+    }
 
     this.setupWebSocket();
     this.hourlyRefreshLoop();
@@ -268,6 +272,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   cleanup(): void {
     this.log.info('Cleaning up homebridge-node-alarm-dot-com');
     this.isShuttingDown = true;
+    this.wsConnectGeneration++;
     if (this.timerHandle) {
       clearTimeout(this.timerHandle);
       this.timerHandle = undefined;
@@ -280,11 +285,13 @@ class ADCPlatform implements DynamicPlatformPlugin {
       clearTimeout(this.wsRefreshHandle);
       this.wsRefreshHandle = undefined;
     }
+    this.clearWebSocketRetry();
     if (this.hourlyRefreshHandle) {
       clearTimeout(this.hourlyRefreshHandle);
       this.hourlyRefreshHandle = undefined;
     }
     if (this.wsClient) {
+      this.wsClient.onclose = null;
       this.wsClient.close();
       this.wsClient = undefined;
     }
@@ -306,14 +313,38 @@ class ADCPlatform implements DynamicPlatformPlugin {
     }, timerDelay);
   }
 
+  private clearWebSocketRetry(): void {
+    if (this.wsRetryHandle) {
+      clearTimeout(this.wsRetryHandle);
+      this.wsRetryHandle = undefined;
+    }
+  }
+
   private async setupWebSocket(): Promise<void> {
     if (this.isShuttingDown) {
       return;
     }
 
+    // Cancel any pending retry/proactive refresh so only this attempt proceeds.
+    this.clearWebSocketRetry();
+    if (this.wsRefreshHandle) {
+      clearTimeout(this.wsRefreshHandle);
+      this.wsRefreshHandle = undefined;
+    }
+
+    const generation = ++this.wsConnectGeneration;
+
     try {
       const authOpts = await this.loginSession();
+      if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
+        return;
+      }
+
       const tokenResponse = await getWebSocketToken(authOpts);
+      if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
+        return;
+      }
+
       const wsUrl = `${tokenResponse.endpoint}?auth=${tokenResponse.value}`;
 
       if (this.wsClient) {
@@ -323,9 +354,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
       }
 
       this.log.info('Connecting to Alarm.com WebSocket...');
-      this.wsClient = new WebSocket(wsUrl);
+      const client = new WebSocket(wsUrl);
+      this.wsClient = client;
 
-      this.wsClient.onmessage = (event) => {
+      client.onmessage = (event) => {
         try {
           const wsEvent: WebSocketEvent = JSON.parse(event.data as string);
           this.log.debug(`WebSocket event received: ${JSON.stringify(wsEvent)}`);
@@ -335,44 +367,58 @@ class ADCPlatform implements DynamicPlatformPlugin {
         }
       };
 
-      this.wsClient.onclose = () => {
+      client.onopen = () => {
+        if (this.isShuttingDown || generation !== this.wsConnectGeneration || this.wsClient !== client) {
+          return;
+        }
+
+        this.log.info('WebSocket connection established.');
+
+        if (this.wsConsecutiveFailures > 0) {
+          this.log.info('WebSocket connection recovered; stopping polling fallback.');
+        }
+        this.wsConsecutiveFailures = 0;
+        if (this.timerHandle) {
+          clearTimeout(this.timerHandle);
+          this.timerHandle = undefined;
+        }
+
+        if (this.wsRefreshHandle) {
+          clearTimeout(this.wsRefreshHandle);
+        }
+        this.wsRefreshHandle = setTimeout(
+          () => {
+            this.log.debug('Proactively refreshing WebSocket session before it expires...');
+            // Purposefully expire authopts to force a token refresh.
+            this.authOpts.expires = +new Date() - 1;
+            this.setupWebSocket();
+          },
+          WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
+        );
+      };
+
+      client.onclose = () => {
         if (this.isShuttingDown) {
           this.log.info('WebSocket connection closed.');
           return;
         }
+        // Ignore close from a socket that was replaced by a newer setup attempt.
+        if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
+          return;
+        }
         this.log.info('WebSocket connection closed.');
+        this.wsClient = undefined;
         this.scheduleWebSocketRetry(5000);
       };
 
-      this.wsClient.onerror = (err) => {
+      client.onerror = (err) => {
+        if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
+          return;
+        }
         this.log.error(`WebSocket error: ${describeError(err)}`);
       };
-
-      this.log.info('WebSocket connection established.');
-
-      if (this.wsConsecutiveFailures > 0) {
-        this.log.info('WebSocket connection recovered; stopping polling fallback.');
-      }
-      this.wsConsecutiveFailures = 0;
-      if (this.timerHandle) {
-        clearTimeout(this.timerHandle);
-        this.timerHandle = undefined;
-      }
-
-      if (this.wsRefreshHandle) {
-        clearTimeout(this.wsRefreshHandle);
-      }
-      this.wsRefreshHandle = setTimeout(
-        () => {
-          this.log.debug('Proactively refreshing WebSocket session before it expires...');
-          // Purposefully expire authopts to force a token refresh.
-          this.authOpts.expires = +new Date() - 1;
-          this.setupWebSocket();
-        },
-        WS_REFRESH_INTERVAL_MS + WS_REFRESH_JITTER_MS * Math.random()
-      );
     } catch (err) {
-      if (this.isShuttingDown) {
+      if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
         return;
       }
       if (String(err).includes('status=403')) {
@@ -388,6 +434,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
   private scheduleWebSocketRetry(delayMs: number): void {
     this.wsConsecutiveFailures++;
+    this.clearWebSocketRetry();
 
     if (this.wsConsecutiveFailures >= WS_MAX_CONSECUTIVE_FAILURES) {
       if (!this.timerHandle) {
@@ -397,10 +444,16 @@ class ADCPlatform implements DynamicPlatformPlugin {
         this.timerLoop();
       }
       this.log.info(`Retrying WebSocket connection in ${WS_REFRESH_INTERVAL_MS / 1000}s...`);
-      setTimeout(() => this.setupWebSocket(), WS_REFRESH_INTERVAL_MS);
+      this.wsRetryHandle = setTimeout(() => {
+        this.wsRetryHandle = undefined;
+        this.setupWebSocket();
+      }, WS_REFRESH_INTERVAL_MS);
     } else {
       this.log.info(`Retrying WebSocket connection in ${delayMs / 1000}s...`);
-      setTimeout(() => this.setupWebSocket(), delayMs);
+      this.wsRetryHandle = setTimeout(() => {
+        this.wsRetryHandle = undefined;
+        this.setupWebSocket();
+      }, delayMs);
     }
   }
 
@@ -528,18 +581,25 @@ class ADCPlatform implements DynamicPlatformPlugin {
     const now = +new Date();
     if (now > this.authOpts.expires) {
       this.log.debug(`Logging into Alarm.com as ${this.username}`);
-      await login(this.username, this.password, this.useMFA ? this.mfaToken : undefined)
-        .then((authOpts) => {
-          authOpts.expires = +new Date() + 1000 * 60 * this.authTimeoutMinutes;
-          this.authOpts = authOpts;
-          this.log.debug(`Logged into Alarm.com as ${this.username}`);
-        })
-        .catch((err) => {
-          this.log.error(`loginSession Error: ${err.message}`);
-          this.log.info('Refreshing session authentication.');
-          this.authOpts.expires = +new Date() - 1000 * 60 * this.authTimeoutMinutes;
-        });
+      try {
+        const authOpts = await login(this.username, this.password, this.useMFA ? this.mfaToken : undefined);
+        authOpts.expires = +new Date() + 1000 * 60 * this.authTimeoutMinutes;
+        this.authOpts = authOpts;
+        this.log.debug(`Logged into Alarm.com as ${this.username}`);
+      } catch (err) {
+        // Keep the session expired so the next call retries login, but do not
+        // return the stub/partial AuthOpts — callers must not proceed unauthenticated.
+        this.authOpts.expires = +new Date() - 1;
+        this.log.error(`loginSession Error: ${describeError(err)}`);
+        throw err instanceof Error ? err : new Error(describeError(err));
+      }
     }
+
+    if (!isAuthenticatedSession(this.authOpts)) {
+      this.authOpts.expires = +new Date() - 1;
+      throw new Error('Alarm.com session is not authenticated');
+    }
+
     return this.authOpts;
   }
 
@@ -662,16 +722,18 @@ class ADCPlatform implements DynamicPlatformPlugin {
   addAccessory(accessory: PlatformAccessory<BaseContext>, type: any, model: string): void {
     const id = accessory.context.accID;
     const name = accessory.context.name;
+
+    // Check before mutating — the previous push-then-findIndex path always hit
+    // the register branch and never the "prevent existing" warning.
+    if (this.accessories.some((existing) => existing.context.accID === id)) {
+      this.log.warn(`Preventing adding existing ${model} ${name} with id ${id}`);
+      return;
+    }
+
     this.accessories.push(accessory);
     const serviceUUID = this.api.hap.uuid.generate(id + type);
-
     accessory.addService(type, name, serviceUUID);
-
-    if (this.accessories.findIndex((accessory) => accessory.context.accID === id) > -1) {
-      this.api.registerPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
-    } else {
-      this.log.warn(`Preventing adding existing ${model} ${name} with id ${id}`);
-    }
+    this.api.registerPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
   }
 
   removeAccessory(accessory?: PlatformAccessory<BaseContext>): void {
@@ -724,5 +786,12 @@ class ADCPlatform implements DynamicPlatformPlugin {
 }
 
 function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]> {
+  if (!Array.isArray(res.systems)) {
+    throw new Error('Alarm.com session has no systems; login may have failed');
+  }
   return Promise.all(res.systems.map((id: string) => getCurrentState(id, res)));
+}
+
+function isAuthenticatedSession(auth: AuthOpts): boolean {
+  return Boolean(auth.cookie && auth.ajaxKey && Array.isArray(auth.systems));
 }

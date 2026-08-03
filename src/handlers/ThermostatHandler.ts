@@ -40,8 +40,8 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
       accID: id,
       name: name,
       thermostatType: model,
-      state: getThermostatState(thermostat.attributes.state, hap),
-      desiredState: getThermostatState(thermostat.attributes.state, hap),
+      state: getThermostatCurrentState(thermostat.attributes.state, hap, thermostat.attributes.inferredState),
+      desiredState: getThermostatTargetState(thermostat.attributes.desiredState, hap),
       currentTemperature: currentTemperature,
       targetTemperature: getThermostatTargetTemperature(thermostat, shouldConvertToC),
       supportsHumidity: thermostat.attributes.supportsHumidity,
@@ -119,8 +119,12 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
       ? convertFtoC(thermostat.attributes.ambientTemp)
       : thermostat.attributes.ambientTemp;
     const targetTemperature = getThermostatTargetTemperature(thermostat, shouldConvertToC);
-    const currentState = getThermostatState(thermostat.attributes.state, hap);
-    const targetState = getThermostatState(thermostat.attributes.desiredState, hap);
+    const currentState = getThermostatCurrentState(
+      thermostat.attributes.state,
+      hap,
+      thermostat.attributes.inferredState
+    );
+    const targetState = getThermostatTargetState(thermostat.attributes.desiredState, hap);
     const humidityLevel = thermostat.attributes.humidityLevel;
 
     const thermostatService = accessory.getService(hap.Service.Thermostat);
@@ -182,20 +186,30 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
     const id = accessory.context.accID;
 
     log.info(`Thermostat ${id}, state change: ${value}`);
-    accessory.context.desiredState = value;
 
-    let newState: THERMOSTAT_STATES = THERMOSTAT_STATES.OFF;
+    let newState: THERMOSTAT_STATES;
     switch (value) {
-      case hap.Characteristic.CurrentHeatingCoolingState.HEAT:
+      case hap.Characteristic.TargetHeatingCoolingState.HEAT:
         newState = THERMOSTAT_STATES.HEATING;
         break;
-      case hap.Characteristic.CurrentHeatingCoolingState.COOL:
+      case hap.Characteristic.TargetHeatingCoolingState.COOL:
         newState = THERMOSTAT_STATES.COOLING;
         break;
-      case hap.Characteristic.CurrentHeatingCoolingState.OFF:
+      case hap.Characteristic.TargetHeatingCoolingState.AUTO:
+        newState = THERMOSTAT_STATES.AUTO;
+        break;
+      case hap.Characteristic.TargetHeatingCoolingState.OFF:
         newState = THERMOSTAT_STATES.OFF;
         break;
+      default: {
+        const msg = `Unsupported thermostat target state ${value}`;
+        log.error(msg);
+        callback(new Error(msg));
+        return;
+      }
     }
+
+    accessory.context.desiredState = value;
 
     await this.ctx
       .loginSession()
@@ -222,15 +236,32 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
     const id = accessory.context.accID;
     let method: typeof setThermostatTargetHeatTemperature | typeof setThermostatTargetCoolTemperature;
 
-    switch (accessory.context.state) {
-      case hap.Characteristic.CurrentHeatingCoolingState.HEAT:
+    // Use desired (target) mode — current activity is HEAT/COOL/OFF only and has no AUTO.
+    switch (accessory.context.desiredState) {
+      case hap.Characteristic.TargetHeatingCoolingState.HEAT:
         method = setThermostatTargetHeatTemperature;
         break;
-      case hap.Characteristic.CurrentHeatingCoolingState.COOL:
+      case hap.Characteristic.TargetHeatingCoolingState.COOL:
         method = setThermostatTargetCoolTemperature;
         break;
+      case hap.Characteristic.TargetHeatingCoolingState.AUTO:
+        // Single TargetTemperature is ambiguous in AUTO; pick the active side.
+        switch (accessory.context.state) {
+          case hap.Characteristic.CurrentHeatingCoolingState.HEAT:
+            method = setThermostatTargetHeatTemperature;
+            break;
+          case hap.Characteristic.CurrentHeatingCoolingState.COOL:
+            method = setThermostatTargetCoolTemperature;
+            break;
+          default: {
+            const msg = `Can't set a single target temperature while in AUTO with no active heat/cool`;
+            log.error(msg);
+            return callback(new Error(msg));
+          }
+        }
+        break;
       default: {
-        const msg = `Can't set temperature when in unknown state ${accessory.context.state}`;
+        const msg = `Can't set temperature when in target state ${accessory.context.desiredState}`;
         log.error(msg);
         return callback(new Error(msg));
       }
@@ -270,16 +301,23 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
 
     switch (event.EventType as WebSocketEventTypes) {
       case WebSocketEventTypes.ThermostatModeChanged: {
-        // WS EventValues (0=OFF, 1=HEAT, 2=COOL, 3=AUTO) map directly to HomeKit characteristic values
-        const state = event.EventValue;
-        if (state !== accessory.context.state) {
-          log.info(`Updating thermostat ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
-          accessory.context.state = state;
-          service.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(state);
+        // WS EventValues (0=OFF, 1=HEAT, 2=COOL, 3=AUTO) map to HomeKit TargetHeatingCoolingState.
+        // CurrentHeatingCoolingState has no AUTO — only update current for non-AUTO modes.
+        const targetState = event.EventValue;
+        if (targetState !== accessory.context.desiredState) {
+          log.info(
+            `Updating thermostat ${name} (${id}), targetState=${targetState}, prev=${accessory.context.desiredState}`
+          );
+          accessory.context.desiredState = targetState;
+          service.getCharacteristic(hap.Characteristic.TargetHeatingCoolingState).updateValue(targetState);
         }
-        if (state !== accessory.context.desiredState) {
-          accessory.context.desiredState = state;
-          service.getCharacteristic(hap.Characteristic.TargetHeatingCoolingState).updateValue(state);
+        if (
+          targetState !== hap.Characteristic.TargetHeatingCoolingState.AUTO &&
+          targetState !== accessory.context.state
+        ) {
+          log.info(`Updating thermostat ${name} (${id}), state=${targetState}, prev=${accessory.context.state}`);
+          accessory.context.state = targetState;
+          service.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(targetState);
         }
         return true;
       }
@@ -300,15 +338,37 @@ export class ThermostatHandler extends BaseHandler<ThermostatContext, Thermostat
   }
 }
 
-function getThermostatState(state: number, hap: HAP): CharacteristicValue {
-  switch (state) {
+/** Map Alarm.com state to HomeKit CurrentHeatingCoolingState (no AUTO). */
+function getThermostatCurrentState(state: number, hap: HAP, inferredState?: number): CharacteristicValue {
+  const effective =
+    state === THERMOSTAT_STATES.AUTO && inferredState !== undefined && inferredState !== THERMOSTAT_STATES.AUTO
+      ? inferredState
+      : state;
+
+  switch (effective) {
     case THERMOSTAT_STATES.HEATING:
       return hap.Characteristic.CurrentHeatingCoolingState.HEAT;
     case THERMOSTAT_STATES.COOLING:
       return hap.Characteristic.CurrentHeatingCoolingState.COOL;
     case THERMOSTAT_STATES.OFF:
+    case THERMOSTAT_STATES.AUTO:
     default:
       return hap.Characteristic.CurrentHeatingCoolingState.OFF;
+  }
+}
+
+/** Map Alarm.com desired state to HomeKit TargetHeatingCoolingState (includes AUTO). */
+function getThermostatTargetState(state: number, hap: HAP): CharacteristicValue {
+  switch (state) {
+    case THERMOSTAT_STATES.HEATING:
+      return hap.Characteristic.TargetHeatingCoolingState.HEAT;
+    case THERMOSTAT_STATES.COOLING:
+      return hap.Characteristic.TargetHeatingCoolingState.COOL;
+    case THERMOSTAT_STATES.AUTO:
+      return hap.Characteristic.TargetHeatingCoolingState.AUTO;
+    case THERMOSTAT_STATES.OFF:
+    default:
+      return hap.Characteristic.TargetHeatingCoolingState.OFF;
   }
 }
 

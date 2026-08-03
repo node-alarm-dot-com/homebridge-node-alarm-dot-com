@@ -145,7 +145,9 @@ function getSensorType(sensor: SensorState, hap: HAP): Array<any> {
     case SensorType.Motion_Sensor:
       return [hap.Service.MotionSensor, hap.Characteristic.MotionDetected, 'Motion Sensor'];
     case SensorType.Smoke_Detector:
+      return [hap.Service.SmokeSensor, hap.Characteristic.SmokeDetected, 'Smoke Detector'];
     case SensorType.Heat_Detector:
+      // HomeKit has no dedicated heat-alarm service; reuse SmokeSensor for alarm state.
       return [hap.Service.SmokeSensor, hap.Characteristic.SmokeDetected, 'Heat Sensor'];
     case SensorType.CO_Detector:
       return [hap.Service.CarbonMonoxideSensor, hap.Characteristic.CarbonMonoxideDetected, 'Carbon Monoxide Detector'];
@@ -153,6 +155,9 @@ function getSensorType(sensor: SensorState, hap: HAP): Array<any> {
       return [hap.Service.AccessControl, hap.Characteristic.RemoteKey, 'Key fob'];
     case SensorType.Water_Sensor:
       return [hap.Service.LeakSensor, hap.Characteristic.LeakDetected, 'Water Sensor'];
+    case SensorType.Glass_Break:
+    case SensorType.Panel_Glass_Break:
+      return [hap.Service.ContactSensor, hap.Characteristic.ContactSensorState, 'Contact Sensor'];
     case SensorType.Contact_Sensor:
       return [hap.Service.ContactSensor, hap.Characteristic.ContactSensorState, 'Contact Sensor'];
     default:
@@ -173,16 +178,33 @@ function getSensorType(sensor: SensorState, hap: HAP): Array<any> {
 }
 
 function getSensorState(sensor: SensorState, hap: HAP): CharacteristicValue {
-  if (sensor.attributes.deviceType == SensorType.Heat_Detector) {
+  if (
+    sensor.attributes.deviceType === SensorType.Heat_Detector ||
+    sensor.attributes.deviceType === SensorType.Smoke_Detector
+  ) {
+    // ADC uses 0 for clear; any non-zero state is treated as detected.
     return sensor.attributes.state === 0
       ? hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED
       : hap.Characteristic.SmokeDetected.SMOKE_DETECTED;
   }
 
-  if (sensor.attributes.deviceType == SensorType.Glass_Break) {
+  if (
+    sensor.attributes.deviceType === SensorType.Glass_Break ||
+    sensor.attributes.deviceType === SensorType.Panel_Glass_Break
+  ) {
     return sensor.attributes.openClosedStatus === 2
       ? hap.Characteristic.ContactSensorState.CONTACT_DETECTED
       : hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED;
+  }
+
+  if (sensor.attributes.deviceType === SensorType.Motion_Sensor) {
+    return sensor.attributes.state === SENSOR_STATES.ACTIVE;
+  }
+
+  if (sensor.attributes.deviceType === SensorType.CO_Detector) {
+    return sensor.attributes.state === 0
+      ? hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL
+      : hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL;
   }
 
   switch (sensor.attributes.state) {
@@ -213,6 +235,7 @@ function sensorModelToType(model: string, hap: HAP): Array<any> {
     case 'Occupancy Sensor':
       return [hap.Service.OccupancySensor, hap.Characteristic.OccupancyDetected];
     case 'Leak Sensor':
+    case 'Water Sensor':
       return [hap.Service.LeakSensor, hap.Characteristic.LeakDetected];
     case 'Key fob':
       return [hap.Service.AccessControl, hap.Characteristic.RemoteKey];
