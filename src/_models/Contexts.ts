@@ -78,12 +78,12 @@ export interface ThermostatContext extends BaseContext {
   humidityLevel: CharacteristicValue;
 }
 
-export interface DoorbellContext extends BaseContext {
+export interface CameraContext extends BaseContext {
   accID: string;
   name: string;
   model: string;
   motionDetected: boolean;
-  doorbellType: 'default';
+  cameraType: 'default';
 }
 
 // Region: Function Casts
@@ -106,8 +106,8 @@ export function isGarage(accessory: PlatformAccessory): accessory is PlatformAcc
 export function isThermostat(accessory: PlatformAccessory): accessory is PlatformAccessory<ThermostatContext> {
   return (accessory as PlatformAccessory<ThermostatContext>).context.thermostatType !== undefined;
 }
-export function isDoorbell(accessory: PlatformAccessory): accessory is PlatformAccessory<DoorbellContext> {
-  return (accessory as PlatformAccessory<DoorbellContext>).context.doorbellType !== undefined;
+export function isCamera(accessory: PlatformAccessory): accessory is PlatformAccessory<CameraContext> {
+  return (accessory as PlatformAccessory<CameraContext>).context.cameraType !== undefined;
 }
 
 // End Region

@@ -1,10 +1,10 @@
 import { CharacteristicGetCallback, PlatformAccessory } from 'homebridge';
 import { CameraState, WebSocketEventTypes } from 'node-alarm-dot-com';
-import { DoorbellContext } from '../_models/Contexts';
+import { CameraContext } from '../_models/Contexts';
 import { BaseHandler } from './BaseHandler';
 import { HandlerContext } from './HandlerContext';
 
-export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, WebSocketEventTypes> {
+export class CameraHandler extends BaseHandler<CameraContext, CameraState, WebSocketEventTypes> {
   constructor(ctx: HandlerContext) {
     super(ctx);
   }
@@ -22,7 +22,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       name: name,
       model: model,
       motionDetected: false,
-      doorbellType: 'default'
+      cameraType: 'default'
     };
 
     if (!ignoredDevices.includes(id)) {
@@ -34,7 +34,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
     }
   }
 
-  setup(accessory: PlatformAccessory<DoorbellContext>): void {
+  setup(accessory: PlatformAccessory<CameraContext>): void {
     const { api, log } = this.ctx;
     const hap = api.hap;
     const model = accessory.context.model;
@@ -63,13 +63,13 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.motionDetected));
   }
 
-  stat(accessory: PlatformAccessory<DoorbellContext>, _camera: CameraState): void {
+  stat(accessory: PlatformAccessory<CameraContext>, _camera: CameraState): void {
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
     const name = accessory.context.name;
 
-    log.debug(`Polling doorbell ${name} (${id})`);
+    log.debug(`Polling camera ${name} (${id})`);
 
     if (accessory.context.motionDetected) {
       accessory.context.motionDetected = false;
@@ -78,14 +78,14 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
     }
   }
 
-  statFromWebSocket(accessory: PlatformAccessory<DoorbellContext>, eventType: WebSocketEventTypes): boolean {
+  statFromWebSocket(accessory: PlatformAccessory<CameraContext>, eventType: WebSocketEventTypes): boolean {
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
     const name = accessory.context.name;
 
     if (eventType === WebSocketEventTypes.VideoCameraTriggered) {
-      log.info(`Doorbell ring detected for ${name} (${id})`);
+      log.info(`Camera ring detected for ${name} (${id})`);
       const doorbellService = accessory.getService(hap.Service.Doorbell);
       doorbellService
         ?.getCharacteristic(hap.Characteristic.ProgrammableSwitchEvent)
@@ -97,7 +97,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       eventType === WebSocketEventTypes.VideoAnalyticsDetection ||
       eventType === WebSocketEventTypes.VideoAnalytics2Detection
     ) {
-      log.info(`Motion detected for doorbell ${name} (${id})`);
+      log.info(`Motion detected for camera ${name} (${id})`);
       accessory.context.motionDetected = true;
       const motionService = accessory.getService(hap.Service.MotionSensor);
       motionService?.getCharacteristic(hap.Characteristic.MotionDetected).updateValue(true);
@@ -105,7 +105,7 @@ export class DoorbellHandler extends BaseHandler<DoorbellContext, CameraState, W
       setTimeout(() => {
         accessory.context.motionDetected = false;
         motionService?.getCharacteristic(hap.Characteristic.MotionDetected).updateValue(false);
-        log.debug(`Motion reset for doorbell ${name} (${id})`);
+        log.debug(`Motion reset for camera ${name} (${id})`);
       }, 5000);
 
       return true;
