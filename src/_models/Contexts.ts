@@ -83,6 +83,7 @@ export interface CameraContext extends BaseContext {
   name: string;
   model: string;
   motionDetected: boolean;
+  isDoorbell: boolean;
   cameraType: 'default';
 }
 

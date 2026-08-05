@@ -244,6 +244,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
                 this.log.info(`Added ${realDeviceType} ${d.attributes.description} (${d.id})`);
               } else {
+                // We refresh existing cameras to make sure that pre-1.13.1 camera do not
+                // still 'ring' when motion is detected.
+                if (key === 'cameras') {
+                  this.cameraHandler.refresh(d as CameraState);
+                }
                 this.log.info(`Restoring accessory with ID ${d.id}`);
               }
             } else {

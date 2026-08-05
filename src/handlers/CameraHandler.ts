@@ -15,6 +15,7 @@ export class CameraHandler extends BaseHandler<CameraContext, CameraState, WebSo
     const id = camera.id;
     const model = camera.attributes.deviceModel;
     const name = camera.attributes.description;
+    const isDoorbell = camera.attributes.isDoorbellCamera;
     const accessory = this.createAccessory(id, name);
 
     accessory.context = {
@@ -22,13 +23,18 @@ export class CameraHandler extends BaseHandler<CameraContext, CameraState, WebSo
       name: name,
       model: model,
       motionDetected: false,
+      isDoorbell: isDoorbell,
       cameraType: 'default'
     };
 
     if (!ignoredDevices.includes(id)) {
       log.info(`Adding ${model} "${name}" (id=${id}, uuid=${accessory.UUID})`);
-      this.ctx.addAccessory(accessory, hap.Service.Doorbell, model);
-      accessory.addService(hap.Service.MotionSensor);
+      if (isDoorbell) {
+        this.ctx.addAccessory(accessory, hap.Service.Doorbell, model);
+        accessory.addService(hap.Service.MotionSensor);
+      } else {
+        this.ctx.addAccessory(accessory, hap.Service.MotionSensor, model);
+      }
       this.setup(accessory);
       this.stat(accessory, camera);
     }
@@ -42,15 +48,19 @@ export class CameraHandler extends BaseHandler<CameraContext, CameraState, WebSo
     this.setAccessoryInfo(accessory, model);
     this.registerIdentify(accessory);
 
-    const doorbellService = accessory.getService(hap.Service.Doorbell);
-    if (doorbellService === undefined) {
-      log.error(`Trouble getting Doorbell service for ${accessory.context.accID}`);
-      return;
-    }
+    if (accessory.context.isDoorbell) {
+      const doorbellService = accessory.getService(hap.Service.Doorbell);
+      if (doorbellService === undefined) {
+        log.error(`Trouble getting Doorbell service for ${accessory.context.accID}`);
+        return;
+      }
 
-    doorbellService
-      .getCharacteristic(hap.Characteristic.ProgrammableSwitchEvent)
-      .on('get', (callback: CharacteristicGetCallback) => callback(null, null));
+      doorbellService.setPrimaryService(true);
+
+      doorbellService
+        .getCharacteristic(hap.Characteristic.ProgrammableSwitchEvent)
+        .on('get', (callback: CharacteristicGetCallback) => callback(null, null));
+    }
 
     const motionService = accessory.getService(hap.Service.MotionSensor);
     if (motionService === undefined) {
@@ -63,7 +73,40 @@ export class CameraHandler extends BaseHandler<CameraContext, CameraState, WebSo
       .on('get', (callback: CharacteristicGetCallback) => callback(null, accessory.context.motionDetected));
   }
 
-  stat(accessory: PlatformAccessory<CameraContext>, _camera: CameraState): void {
+  /**
+   * Cameras added by older plugin versions always got a physical Doorbell service,
+   * so its mere presence can't be used to tell doorbells and plain cameras apart.
+   * Reconciling against the live isDoorbellCamera flag fixes up cached accessories
+   * and self-heals if Alarm.com's flag for a device ever changes.
+   */
+  private reconcileDoorbell(accessory: PlatformAccessory<CameraContext>, camera: CameraState): void {
+    const { api } = this.ctx;
+    const hap = api.hap;
+    const isDoorbell = camera.attributes.isDoorbellCamera;
+
+    if (accessory.context.isDoorbell === isDoorbell) {
+      return;
+    }
+
+    accessory.context.isDoorbell = isDoorbell;
+
+    if (isDoorbell) {
+      if (accessory.getService(hap.Service.Doorbell) === undefined) {
+        accessory.addService(hap.Service.Doorbell);
+      }
+    } else {
+      const doorbellService = accessory.getService(hap.Service.Doorbell);
+      if (doorbellService !== undefined) {
+        accessory.removeService(doorbellService);
+      }
+    }
+
+    this.setup(accessory);
+  }
+
+  stat(accessory: PlatformAccessory<CameraContext>, camera: CameraState): void {
+    this.reconcileDoorbell(accessory, camera);
+
     const { api, log } = this.ctx;
     const hap = api.hap;
     const id = accessory.context.accID;
@@ -85,6 +128,11 @@ export class CameraHandler extends BaseHandler<CameraContext, CameraState, WebSo
     const name = accessory.context.name;
 
     if (eventType === WebSocketEventTypes.VideoCameraTriggered) {
+      if (!accessory.context.isDoorbell) {
+        log.debug(`Ignoring ring event for non-doorbell camera ${name} (${id})`);
+        return false;
+      }
+
       log.info(`Camera ring detected for ${name} (${id})`);
       const doorbellService = accessory.getService(hap.Service.Doorbell);
       doorbellService
