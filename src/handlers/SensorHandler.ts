@@ -6,6 +6,8 @@ import { BaseHandler } from './BaseHandler';
 import { HandlerContext } from './HandlerContext';
 
 export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSocketEventTypes> {
+  private readonly openedClosedTimers = new Map<string, NodeJS.Timeout>();
+
   constructor(ctx: HandlerContext) {
     super(ctx);
   }
@@ -108,9 +110,19 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
       return false;
     }
 
+    const pendingTimer = this.openedClosedTimers.get(accessory.UUID);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.openedClosedTimers.delete(accessory.UUID);
+    }
+
     if (eventType === WebSocketEventTypes.OpenedClosed) {
       this.setContactState(accessory, service, true);
-      setTimeout(() => this.setContactState(accessory, service, false), 1000);
+      const timer = setTimeout(() => {
+        this.openedClosedTimers.delete(accessory.UUID);
+        this.setContactState(accessory, service, false);
+      }, 1000);
+      this.openedClosedTimers.set(accessory.UUID, timer);
     } else {
       this.setContactState(accessory, service, eventType === WebSocketEventTypes.Opened);
     }
