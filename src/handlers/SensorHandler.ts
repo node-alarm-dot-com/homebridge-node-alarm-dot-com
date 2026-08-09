@@ -1,4 +1,12 @@
-import { CharacteristicGetCallback, CharacteristicValue, HAP, PlatformAccessory, Service } from 'homebridge';
+import {
+  Characteristic,
+  CharacteristicGetCallback,
+  CharacteristicValue,
+  HAP,
+  PlatformAccessory,
+  Service,
+  WithUUID
+} from 'homebridge';
 import { SensorState, SensorType, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { SENSOR_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { SensorContext } from '../_models/Contexts';
@@ -105,10 +113,132 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
     const { api } = this.ctx;
     const hap = api.hap;
 
-    const service = accessory.getService(hap.Service.ContactSensor);
-    if (!service) {
+    // Alarm.com reuses Opened/Closed-style events across sensor classes (contact, motion,
+    // occupancy, leak, smoke, CO). Events outside this set (Tamper/Bypassed/EndOfBypass/etc.)
+    // carry no open/closed information and need REST reconciliation instead.
+    const isActive = eventType === WebSocketEventTypes.Opened || eventType === WebSocketEventTypes.DoorLeftOpen;
+    const isIdle =
+      eventType === WebSocketEventTypes.Closed ||
+      eventType === WebSocketEventTypes.DoorLeftOpenRestoral ||
+      eventType === WebSocketEventTypes.OpenedClosed;
+
+    if (!isActive && !isIdle) {
       return false;
     }
+
+    // OpenedClosed events indicate a sensor was opened and then closed in between the time an
+    // event could fire. We invent a pulse (active, then idle a second later) so people can still
+    // build automations off of this, regardless of which sensor class is involved.
+    // FIXME: This should probably be a event queue we process instead of all of the places we use timers.
+    const isPulse = eventType === WebSocketEventTypes.OpenedClosed;
+
+    const contactService = accessory.getService(hap.Service.ContactSensor);
+    if (contactService) {
+      this.updateSensorCharacteristic(
+        accessory,
+        contactService,
+        hap.Characteristic.ContactSensorState,
+        hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED,
+        hap.Characteristic.ContactSensorState.CONTACT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const motion = accessory.getService(hap.Service.MotionSensor);
+    if (motion) {
+      this.updateSensorCharacteristic(
+        accessory,
+        motion,
+        hap.Characteristic.MotionDetected,
+        true,
+        false,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const occupancy = accessory.getService(hap.Service.OccupancySensor);
+    if (occupancy) {
+      this.updateSensorCharacteristic(
+        accessory,
+        occupancy,
+        hap.Characteristic.OccupancyDetected,
+        hap.Characteristic.OccupancyDetected.OCCUPANCY_DETECTED,
+        hap.Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const leak = accessory.getService(hap.Service.LeakSensor);
+    if (leak) {
+      this.updateSensorCharacteristic(
+        accessory,
+        leak,
+        hap.Characteristic.LeakDetected,
+        hap.Characteristic.LeakDetected.LEAK_DETECTED,
+        hap.Characteristic.LeakDetected.LEAK_NOT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const smoke = accessory.getService(hap.Service.SmokeSensor);
+    if (smoke) {
+      this.updateSensorCharacteristic(
+        accessory,
+        smoke,
+        hap.Characteristic.SmokeDetected,
+        hap.Characteristic.SmokeDetected.SMOKE_DETECTED,
+        hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const co = accessory.getService(hap.Service.CarbonMonoxideSensor);
+    if (co) {
+      this.updateSensorCharacteristic(
+        accessory,
+        co,
+        hap.Characteristic.CarbonMonoxideDetected,
+        hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL,
+        hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  private updateSensorCharacteristic(
+    accessory: PlatformAccessory<SensorContext>,
+    service: Service,
+    characteristic: WithUUID<{ new (): Characteristic }>,
+    activeValue: CharacteristicValue,
+    idleValue: CharacteristicValue,
+    isActive: boolean,
+    isPulse: boolean
+  ): void {
+    const { log } = this.ctx;
+    const id = accessory.context.accID;
+    const name = accessory.context.name;
+
+    const setState = (state: CharacteristicValue): void => {
+      if (state !== accessory.context.state) {
+        log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+        accessory.context.state = state;
+        service.getCharacteristic(characteristic).updateValue(state);
+      }
+    };
 
     const pendingTimer = this.openedClosedTimers.get(accessory.UUID);
     if (pendingTimer) {
@@ -116,34 +246,14 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
       this.openedClosedTimers.delete(accessory.UUID);
     }
 
-    if (eventType === WebSocketEventTypes.OpenedClosed) {
-      this.setContactState(accessory, service, true);
+    setState(isActive || isPulse ? activeValue : idleValue);
+
+    if (isPulse) {
       const timer = setTimeout(() => {
         this.openedClosedTimers.delete(accessory.UUID);
-        this.setContactState(accessory, service, false);
+        setState(idleValue);
       }, 1000);
       this.openedClosedTimers.set(accessory.UUID, timer);
-    } else {
-      this.setContactState(accessory, service, eventType === WebSocketEventTypes.Opened);
-    }
-
-    return true;
-  }
-
-  private setContactState(accessory: PlatformAccessory<SensorContext>, service: Service, isOpen: boolean): void {
-    const { api, log } = this.ctx;
-    const hap = api.hap;
-    const id = accessory.context.accID;
-    const name = accessory.context.name;
-
-    const state = isOpen
-      ? hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
-      : hap.Characteristic.ContactSensorState.CONTACT_DETECTED;
-
-    if (state !== accessory.context.state) {
-      log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
-      accessory.context.state = state;
-      service.getCharacteristic(hap.Characteristic.ContactSensorState).updateValue(state);
     }
   }
 }
