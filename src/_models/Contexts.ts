@@ -5,7 +5,7 @@ import { SensorType } from 'node-alarm-dot-com';
  * This is the information that is shared amongst all devices.
  */
 export interface BaseContext {
-  [x: string]: any;
+  [x: string]: unknown;
   /**
    * accID is the ID assigned from Alarm.com.
    */
