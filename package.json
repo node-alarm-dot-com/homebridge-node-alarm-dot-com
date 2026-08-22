@@ -31,6 +31,10 @@
     "LICENSE",
     "README.md",
     "dist/**/*",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.js.map",
+    "!dist/**/*.test.d.ts",
+    "!dist/**/*.test.d.ts.map",
     "config.schema.json",
     "package.json"
   ],
@@ -44,7 +48,8 @@
     "start": "ts-node src/index.ts",
     "start-dev": "homebridge -I -D",
     "watch": "npm run build && npm link && tsc && homebridge -I -D",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "pretest": "npm run build",
+    "test": "node --test 'dist/**/*.test.js'"
   },
   "engines": {
     "node": ">=22.0.0",
