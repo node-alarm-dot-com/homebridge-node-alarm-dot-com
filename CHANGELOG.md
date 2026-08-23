@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file, based on the
 [GitHub releases](https://github.com/node-alarm-dot-com/homebridge-node-alarm-dot-com/releases).
 
-## [1.13.1-Beta]
+## [1.13.1]
 
 ### Bugs Squished
 
@@ -15,6 +15,8 @@ All notable changes to this project are documented in this file, based on the
 - Fixed overlapping WebSocket connect/retry attempts causing double connections and 403 token churn after reconnect. (#163)
 - Improved WebSocket error logging to include close codes, reason, and underlying error causes for easier diagnosis.
 - Fix stale cached accessories not being removed properly.
+- Updated packages
+- Added basic testing. Plugin is now tested and linted during the development cycle.
 
 ## [1.13.0]
 
