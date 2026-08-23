@@ -36,7 +36,7 @@ import path from 'path';
 import { describeError } from 'node-alarm-dot-com/dist/_utils';
 import {
   BaseContext,
-  isDoorbell,
+  isCamera,
   isGarage,
   isLight,
   isLock,
@@ -47,7 +47,7 @@ import {
 import { ArmingModes, PluginPlatformConfig } from './_models/PluginPlatformConfig';
 import { SimplifiedSystemState } from './_models/SimplifiedSystemState';
 import { CustomLogger, CustomLogLevel } from './CustomLogger';
-import { DoorbellHandler } from './handlers/DoorbellHandler';
+import { CameraHandler } from './handlers/CameraHandler';
 import { GarageHandler } from './handlers/GarageHandler';
 import { MANUFACTURER } from './handlers/HandlerContext';
 import { LightHandler } from './handlers/LightHandler';
@@ -106,7 +106,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
   private readonly lockHandler: LockHandler;
   private readonly garageHandler: GarageHandler;
   private readonly thermostatHandler: ThermostatHandler;
-  private readonly doorbellHandler: DoorbellHandler;
+  private readonly cameraHandler: CameraHandler;
 
   constructor(log: Logger, config: PlatformConfig, api: API) {
     this.api = api;
@@ -167,7 +167,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
     this.lockHandler = new LockHandler(this);
     this.garageHandler = new GarageHandler(this);
     this.thermostatHandler = new ThermostatHandler(this);
-    this.doorbellHandler = new DoorbellHandler(this);
+    this.cameraHandler = new CameraHandler(this);
 
     if (!api && !config) {
       return;
@@ -227,7 +227,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
               const existingAccessory = this.accessories.find((accessory) => accessory.UUID === uuid);
               if (!existingAccessory) {
                 if (key === 'cameras') {
-                  this.doorbellHandler.add(d as CameraState);
+                  this.cameraHandler.add(d as CameraState);
                 } else if (realDeviceType === 'partition') {
                   this.partitionHandler.add(d as PartitionState);
                 } else if (realDeviceType === 'sensor') {
@@ -244,6 +244,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
                 this.log.info(`Added ${realDeviceType} ${d.attributes.description} (${d.id})`);
               } else {
+                // We refresh existing cameras to make sure that pre-1.13.1 camera do not
+                // still 'ring' when motion is detected.
+                if (key === 'cameras') {
+                  this.cameraHandler.refresh(d as CameraState);
+                }
                 this.log.info(`Restoring accessory with ID ${d.id}`);
               }
             } else {
@@ -392,7 +397,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         );
       };
 
-      client.onclose = () => {
+      client.onclose = (event) => {
         if (this.isShuttingDown) {
           this.log.info('WebSocket connection closed.');
           return;
@@ -401,7 +406,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
           return;
         }
-        this.log.info('WebSocket connection closed.');
+        this.log.info(`WebSocket connection closed (${formatWebSocketClose(event)}).`);
         this.wsClient = undefined;
         this.scheduleWebSocketRetry(5000);
       };
@@ -410,7 +415,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
         if (generation !== this.wsConnectGeneration || this.wsClient !== client) {
           return;
         }
-        this.log.error(`WebSocket error: ${describeError(err)}`);
+        this.log.error(`WebSocket error: ${formatWebSocketError(err)}`);
       };
     } catch (err) {
       if (this.isShuttingDown || generation !== this.wsConnectGeneration) {
@@ -524,11 +529,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
         } else {
           this.log.debug(`WebSocket: unknown thermostat event type ${EventType} for ${accessory.context.name}`);
         }
-      } else if (isDoorbell(accessory)) {
+      } else if (isCamera(accessory)) {
         if (CAMERA_EVENT_TYPES.has(EventType)) {
-          this.doorbellHandler.statFromWebSocket(accessory, EventType);
+          this.cameraHandler.statFromWebSocket(accessory, EventType);
         } else {
-          this.log.debug(`WebSocket: unknown doorbell event type ${EventType} for ${accessory.context.name}`);
+          this.log.debug(`WebSocket: unknown camera event type ${EventType} for ${accessory.context.name}`);
         }
       } else {
         this.log.info(`Received a WS event for an unknown device type. Ignoring`);
@@ -560,8 +565,8 @@ class ADCPlatform implements DynamicPlatformPlugin {
       this.garageHandler.setup(accessory);
     } else if (isThermostat(accessory)) {
       this.thermostatHandler.setup(accessory);
-    } else if (isDoorbell(accessory)) {
-      this.doorbellHandler.setup(accessory);
+    } else if (isCamera(accessory)) {
+      this.cameraHandler.setup(accessory);
     } else {
       this.log.warn(`Unrecognized accessory ${accessory.context['accID']} loaded from cache`);
     }
@@ -698,7 +703,7 @@ class ADCPlatform implements DynamicPlatformPlugin {
           }
 
           if (system.cameras) {
-            system.cameras.forEach((c) => this.doorbellHandler.refresh(c as CameraState));
+            system.cameras.forEach((c) => this.cameraHandler.refresh(c as CameraState));
           } else {
             this.log.info('No cameras found, ignore if expected, or check configuration with security system provider');
           }
@@ -738,7 +743,10 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
     this.log.info(`Removing ${accessory.context.name} (${accessory.context.accID}) from HomeBridge`);
     this.api.unregisterPlatformAccessories(PLUGIN_ID, PLUGIN_NAME, [accessory]);
-    this.accessories.splice(this.accessories.indexOf(accessory), 1);
+    const index = this.accessories.indexOf(accessory);
+    if (index !== -1) {
+      this.accessories.splice(index, 1);
+    }
   }
 
   removeAccessories(): void {
@@ -789,4 +797,32 @@ function fetchStateForAllSystems(res: AuthOpts): Promise<FlattenedSystemState[]>
 
 function isAuthenticatedSession(auth: AuthOpts): boolean {
   return Boolean(auth.cookie && auth.ajaxKey && Array.isArray(auth.systems));
+}
+
+/**
+ * Node's WebSocket ErrorEvent often has an empty message; the useful detail is on `.error`.
+ * util.inspect(ErrorEvent) also omits that cause, which produced opaque logs like:
+ * `WebSocket error: ErrorEvent { type: 'error', ... }`.
+ */
+function formatWebSocketError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const event = err as { type?: unknown; message?: unknown; error?: unknown };
+    if ('error' in event && event.error !== undefined && event.error !== null) {
+      const parts: string[] = [];
+      if (typeof event.type === 'string' && event.type) {
+        parts.push(`type=${event.type}`);
+      }
+      if (typeof event.message === 'string' && event.message) {
+        parts.push(`message=${event.message}`);
+      }
+      parts.push(`cause=${describeError(event.error)}`);
+      return parts.join(', ');
+    }
+  }
+  return describeError(err);
+}
+
+function formatWebSocketClose(event: { code: number; reason: string; wasClean: boolean }): string {
+  const reason = event.reason.trim() ? event.reason : 'none';
+  return `code=${event.code}, reason=${reason}, wasClean=${event.wasClean}`;
 }

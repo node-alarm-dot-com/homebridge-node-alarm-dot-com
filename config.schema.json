@@ -8,10 +8,10 @@
       "arming_obj": {
         "type": "object",
         "properties": {
-          "noEntryDelay": {"type": "boolean", "default": false},
-          "silentArming": {"type": "boolean", "default": false},
-          "nightArming": {"type":  "boolean", "default":  false},
-          "forceBypass": {"type":  "boolean", "default":  false}
+          "noEntryDelay": { "type": "boolean", "default": false },
+          "silentArming": { "type": "boolean", "default": false },
+          "nightArming": { "type": "boolean", "default": false },
+          "forceBypass": { "type": "boolean", "default": false }
         }
       }
     },
@@ -55,11 +55,11 @@
         "default": 2,
         "required": true,
         "oneOf": [
-          {"title": "0 - No log entries", "enum": [0]},
-          {"title": "1 - Only errors", "enum": [1]},
-          {"title": "2 - Only warnings and errors (Default)", "enum": [2]},
-          {"title": "3 - Notices, warnings, and errors", "enum": [3]},
-          {"title": "4 - Verbose", "enum": [4]}
+          { "title": "0 - No log entries", "enum": [0] },
+          { "title": "1 - Only errors", "enum": [1] },
+          { "title": "2 - Only warnings and errors (Default)", "enum": [2] },
+          { "title": "3 - Notices, warnings, and errors", "enum": [3] },
+          { "title": "4 - Verbose", "enum": [4] }
         ]
       },
       "authTimeoutMinutes": {
@@ -101,11 +101,6 @@
           "type": "string",
           "placeholder": "96922426-1 (Example)"
         }
-      },
-      "supportAnyDoorbellCamera": {
-        "title": "<b>Support Any Doorbell Camera</b>",
-        "type": "boolean",
-        "description": "When enabled, any camera where isDoorbellCamera is true will be registered as a doorbell in HomeKit, in addition to the ADC-VDB750 which is always supported."
       }
     }
   }

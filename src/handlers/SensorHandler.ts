@@ -1,4 +1,12 @@
-import { CharacteristicGetCallback, CharacteristicValue, HAP, PlatformAccessory, Service } from 'homebridge';
+import {
+  Characteristic,
+  CharacteristicGetCallback,
+  CharacteristicValue,
+  HAP,
+  PlatformAccessory,
+  Service,
+  WithUUID
+} from 'homebridge';
 import { SensorState, SensorType, WebSocketEventTypes } from 'node-alarm-dot-com';
 import { SENSOR_STATES } from 'node-alarm-dot-com/dist/_models/States';
 import { SensorContext } from '../_models/Contexts';
@@ -6,6 +14,8 @@ import { BaseHandler } from './BaseHandler';
 import { HandlerContext } from './HandlerContext';
 
 export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSocketEventTypes> {
+  private readonly openedClosedTimers = new Map<string, NodeJS.Timeout>();
+
   constructor(ctx: HandlerContext) {
     super(ctx);
   }
@@ -103,35 +113,147 @@ export class SensorHandler extends BaseHandler<SensorContext, SensorState, WebSo
     const { api } = this.ctx;
     const hap = api.hap;
 
-    const service = accessory.getService(hap.Service.ContactSensor);
-    if (!service) {
+    // Alarm.com reuses Opened/Closed-style events across sensor classes (contact, motion,
+    // occupancy, leak, smoke, CO). Events outside this set (Tamper/Bypassed/EndOfBypass/etc.)
+    // carry no open/closed information and need REST reconciliation instead.
+    const isActive = eventType === WebSocketEventTypes.Opened || eventType === WebSocketEventTypes.DoorLeftOpen;
+    const isIdle =
+      eventType === WebSocketEventTypes.Closed ||
+      eventType === WebSocketEventTypes.DoorLeftOpenRestoral ||
+      eventType === WebSocketEventTypes.OpenedClosed;
+
+    if (!isActive && !isIdle) {
       return false;
     }
 
-    if (eventType === WebSocketEventTypes.OpenedClosed) {
-      this.setContactState(accessory, service, true);
-      setTimeout(() => this.setContactState(accessory, service, false), 1000);
-    } else {
-      this.setContactState(accessory, service, eventType === WebSocketEventTypes.Opened);
+    // OpenedClosed events indicate a sensor was opened and then closed in between the time an
+    // event could fire. We invent a pulse (active, then idle a second later) so people can still
+    // build automations off of this, regardless of which sensor class is involved.
+    // FIXME: This should probably be a event queue we process instead of all of the places we use timers.
+    const isPulse = eventType === WebSocketEventTypes.OpenedClosed;
+
+    const contactService = accessory.getService(hap.Service.ContactSensor);
+    if (contactService) {
+      this.updateSensorCharacteristic(
+        accessory,
+        contactService,
+        hap.Characteristic.ContactSensorState,
+        hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED,
+        hap.Characteristic.ContactSensorState.CONTACT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
     }
 
-    return true;
+    const motion = accessory.getService(hap.Service.MotionSensor);
+    if (motion) {
+      this.updateSensorCharacteristic(
+        accessory,
+        motion,
+        hap.Characteristic.MotionDetected,
+        true,
+        false,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const occupancy = accessory.getService(hap.Service.OccupancySensor);
+    if (occupancy) {
+      this.updateSensorCharacteristic(
+        accessory,
+        occupancy,
+        hap.Characteristic.OccupancyDetected,
+        hap.Characteristic.OccupancyDetected.OCCUPANCY_DETECTED,
+        hap.Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const leak = accessory.getService(hap.Service.LeakSensor);
+    if (leak) {
+      this.updateSensorCharacteristic(
+        accessory,
+        leak,
+        hap.Characteristic.LeakDetected,
+        hap.Characteristic.LeakDetected.LEAK_DETECTED,
+        hap.Characteristic.LeakDetected.LEAK_NOT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const smoke = accessory.getService(hap.Service.SmokeSensor);
+    if (smoke) {
+      this.updateSensorCharacteristic(
+        accessory,
+        smoke,
+        hap.Characteristic.SmokeDetected,
+        hap.Characteristic.SmokeDetected.SMOKE_DETECTED,
+        hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    const co = accessory.getService(hap.Service.CarbonMonoxideSensor);
+    if (co) {
+      this.updateSensorCharacteristic(
+        accessory,
+        co,
+        hap.Characteristic.CarbonMonoxideDetected,
+        hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL,
+        hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL,
+        isActive,
+        isPulse
+      );
+      return true;
+    }
+
+    return false;
   }
 
-  private setContactState(accessory: PlatformAccessory<SensorContext>, service: Service, isOpen: boolean): void {
-    const { api, log } = this.ctx;
-    const hap = api.hap;
+  private updateSensorCharacteristic(
+    accessory: PlatformAccessory<SensorContext>,
+    service: Service,
+    characteristic: WithUUID<{ new (): Characteristic }>,
+    activeValue: CharacteristicValue,
+    idleValue: CharacteristicValue,
+    isActive: boolean,
+    isPulse: boolean
+  ): void {
+    const { log } = this.ctx;
     const id = accessory.context.accID;
     const name = accessory.context.name;
 
-    const state = isOpen
-      ? hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
-      : hap.Characteristic.ContactSensorState.CONTACT_DETECTED;
+    const setState = (state: CharacteristicValue): void => {
+      if (state !== accessory.context.state) {
+        log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
+        accessory.context.state = state;
+        service.getCharacteristic(characteristic).updateValue(state);
+      }
+    };
 
-    if (state !== accessory.context.state) {
-      log.info(`Updating sensor ${name} (${id}), state=${state}, prev=${accessory.context.state}`);
-      accessory.context.state = state;
-      service.getCharacteristic(hap.Characteristic.ContactSensorState).updateValue(state);
+    const pendingTimer = this.openedClosedTimers.get(accessory.UUID);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.openedClosedTimers.delete(accessory.UUID);
+    }
+
+    setState(isActive || isPulse ? activeValue : idleValue);
+
+    if (isPulse) {
+      const timer = setTimeout(() => {
+        this.openedClosedTimers.delete(accessory.UUID);
+        setState(idleValue);
+      }, 1000);
+      this.openedClosedTimers.set(accessory.UUID, timer);
     }
   }
 }
@@ -182,10 +304,11 @@ function getSensorState(sensor: SensorState, hap: HAP): CharacteristicValue {
     sensor.attributes.deviceType === SensorType.Heat_Detector ||
     sensor.attributes.deviceType === SensorType.Smoke_Detector
   ) {
-    // ADC uses 0 for clear; any non-zero state is treated as detected.
-    return sensor.attributes.state === 0
-      ? hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED
-      : hap.Characteristic.SmokeDetected.SMOKE_DETECTED;
+    // ADC reuses the generic sensor state enum for these binary detectors:
+    // CLOSED (1) is the idle/clear state, OPEN (2) is alarm/tripped.
+    return sensor.attributes.state === SENSOR_STATES.OPEN
+      ? hap.Characteristic.SmokeDetected.SMOKE_DETECTED
+      : hap.Characteristic.SmokeDetected.SMOKE_NOT_DETECTED;
   }
 
   if (
@@ -202,9 +325,10 @@ function getSensorState(sensor: SensorState, hap: HAP): CharacteristicValue {
   }
 
   if (sensor.attributes.deviceType === SensorType.CO_Detector) {
-    return sensor.attributes.state === 0
-      ? hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL
-      : hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL;
+    // Same generic enum: CLOSED (1) = normal, OPEN (2) = CO detected.
+    return sensor.attributes.state === SENSOR_STATES.OPEN
+      ? hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL
+      : hap.Characteristic.CarbonMonoxideDetected.CO_LEVELS_NORMAL;
   }
 
   switch (sensor.attributes.state) {

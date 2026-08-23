@@ -1,4 +1,12 @@
-import { CameraState, GarageState, LightState, LockState, PartitionState, SensorState, ThermostatState } from 'node-alarm-dot-com';
+import {
+  CameraState,
+  GarageState,
+  LightState,
+  LockState,
+  PartitionState,
+  SensorState,
+  ThermostatState
+} from 'node-alarm-dot-com';
 
 export interface SimplifiedSystemState {
   partitions: PartitionState[];
