@@ -129,6 +129,10 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
     log.info(`Garage Door ${id}, ${value})`);
     accessory.context.desiredState = value;
 
+    // Callback early because otherwise the device appears unresponsive while
+    // waiting for the garage door to open/close.
+    callback();
+
     await this.ctx
       .loginSession()
       .then((res) => method(id, res))
@@ -136,11 +140,9 @@ export class GarageHandler extends BaseHandler<GarageContext, GarageState, WebSo
       .then((garage) => {
         this.stat(accessory, garage);
       })
-      .then(() => callback())
       .catch((err) => {
         log.error(`Error: Failed to change garage state: ${err.stack}`);
         this.ctx.refreshDevices();
-        callback(err);
       });
   }
 
