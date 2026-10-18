@@ -464,6 +464,11 @@ class ADCPlatform implements DynamicPlatformPlugin {
 
       const accessory = this.accessories.find((a) => matchesId(a.context.accID));
       if (!accessory) {
+        if (this.ignoredDevices.some((id) => matchesId(id))) {
+          this.log.debug(`WebSocket: ignoring event for ignored device ${deviceId}`);
+          return;
+        }
+
         this.log.warn(`WebSocket: no device matched DeviceId ${event.DeviceId}, falling back to full refresh`);
         if (this.unmatchedDeviceRefreshHandle) {
           clearTimeout(this.unmatchedDeviceRefreshHandle);
